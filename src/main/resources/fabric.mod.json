@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "ptdialogue",
+  "version": "${version}",
+
+  "name": "PTDialogue",
+  "description": "A mod that adds the ability to create dialogue boxes using commands. Special thanks to Fareiry for creating the essential textures.",
+  "authors": ["PlotuperTeam", "Joraga_ka", "Fareiry"],
+  "contact": {
+    "telegram": "https://t.me/JrgkDungeon"
+  },
+
+  "license": "MIT License",
+  "icon": "assets/ptdialogue/icon.png",
+
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": ["com.joragaka.ptdialogue.client.ptdialogueDataGenerator"],
+    "client": ["com.joragaka.ptdialogue.client.ptdialogueClient"],
+    "main": ["com.joragaka.ptdialogue.PtDialogue"],
+    "modmenu": ["com.joragaka.ptdialogue.client.ptdialogueModMenuIntegration"]
+  },
+
+  "mixins": [
+    "ptdialogue.mixins.json"
+    ,{
+      "config": "ptdialogue.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  },
+
+  "suggests": {
+    "cloth-config": "*",
+    "modmenu": "*"
+  }
+}

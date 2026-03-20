@@ -1,0 +1,18 @@
+{
+  "key.category.ptdialogue.keybinds": "ptdialogue",
+  "config.ptdialogue.title": "ptdialogue Settings",
+  "config.ptdialogue.category.general": "Dialogue",
+  "config.ptdialogue.distanceFromCenter": "Distance from Center",
+  "config.ptdialogue.distanceFromCenter.tooltip": "Distance in pixels from screen center to dialogue box. Default: 150",
+  "config.ptdialogue.windowScale": "Window Scale",
+  "config.ptdialogue.windowScale.tooltip": "Scale multiplier for the dialogue box. Default: 1.0",
+  "config.ptdialogue.edgePadding": "Edge Padding",
+  "config.ptdialogue.edgePadding.tooltip": "Screen edge padding (fraction of width) before text wraps. Default: 0.25",
+  "config.ptdialogue.verticalPaddingFraction": "Vertical Padding",
+  "config.ptdialogue.verticalPaddingFraction.tooltip": "Vertical padding (fraction of screen height) used to clip messages inside the history background arches. Default: 0.075",
+  "key.ptdialogue.openConfig": "Open ptdialogue Settings",
+  "key.ptdialogue.openHistory": "Dialogue History",
+  "category.ptdialogue.keybinds": "ptdialogue",
+  "screen.ptdialogue.dialogueHistory": "Dialogue History",
+  "screen.ptdialogue.dialogueHistory.empty": "No dialogues yet"
+}
