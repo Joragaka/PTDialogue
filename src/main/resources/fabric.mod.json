@@ -7,7 +7,9 @@
   "description": "A mod that adds the ability to create dialogue boxes using commands. Special thanks to Fareiry for creating the essential textures.",
   "authors": ["PlotuperTeam", "Joraga_ka", "Fareiry"],
   "contact": {
-    "telegram": "https://t.me/JrgkDungeon"
+    "homepage": "https://t.me/JrgkDungeon",
+    "discord": "https://t.me/JrgkDungeon",
+    "issues": "https://github.com/Joragaka/PTDialogue/issues"
   },
 
   "license": "MIT License",
