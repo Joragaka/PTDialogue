@@ -14,5 +14,6 @@
   "key.ptdialogue.openHistory": "Dialogue History",
   "category.ptdialogue.keybinds": "ptdialogue",
   "screen.ptdialogue.dialogueHistory": "Dialogue History",
-  "screen.ptdialogue.dialogueHistory.empty": "No dialogues yet"
+  "screen.ptdialogue.dialogueHistory.empty": "No dialogues yet",
+  "ptdialogue.command.dialogue.sent": "Dialogue sent to %d player(s)"
 }

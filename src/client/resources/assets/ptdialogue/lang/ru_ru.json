@@ -13,5 +13,6 @@
   "key.ptdialogue.openHistory": "История диалогов",
   "category.ptdialogue.keybinds": "ptdialogue",
   "screen.ptdialogue.dialogueHistory": "История диалогов",
-  "screen.ptdialogue.dialogueHistory.empty": "Здесь нет диалогов"
+  "screen.ptdialogue.dialogueHistory.empty": "Здесь нет диалогов",
+  "ptdialogue.command.dialogue.sent": "Диалог отправлен %d игроку(ам)"
 }
