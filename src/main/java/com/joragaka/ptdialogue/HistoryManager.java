@@ -105,18 +105,88 @@ public class HistoryManager {
         if (!Files.exists(file)) return list;
         try {
             String json = Files.readString(file);
-            var root = JsonParser.parseString(json);
-            if (!root.isJsonArray()) return list;
-            for (var je : root.getAsJsonArray()) {
-                try {
-                    var o     = je.getAsJsonObject();
-                    String icon  = o.has("icon")    ? o.get("icon").getAsString()    : "";
-                    String name  = o.has("name")    ? o.get("name").getAsString()    : "";
-                    int    color = o.has("color")   ? o.get("color").getAsInt()      : 0xFFFFFF;
-                    String msg   = o.has("message") ? o.get("message").getAsString() : "";
-                    long   ts    = o.has("ts")      ? o.get("ts").getAsLong()        : 0L;
-                    list.add(new HistorySyncPayload.Entry(icon, name, color, msg, ts));
-                } catch (Exception ignored) {}
+            try {
+                var root = JsonParser.parseString(json);
+                if (!root.isJsonArray()) return list;
+                for (var je : root.getAsJsonArray()) {
+                    try {
+                        var o     = je.getAsJsonObject();
+                        String icon  = o.has("icon")    ? o.get("icon").getAsString()    : "";
+                        String name  = o.has("name")    ? o.get("name").getAsString()    : "";
+                        int    color = o.has("color")   ? o.get("color").getAsInt()      : 0xFFFFFF;
+                        String msg   = o.has("message") ? o.get("message").getAsString() : "";
+                        long   ts    = o.has("ts")      ? o.get("ts").getAsLong()        : 0L;
+                        list.add(new HistorySyncPayload.Entry(icon, name, color, msg, ts));
+                    } catch (Exception ignored) {}
+                }
+                return list;
+            } catch (Exception parseEx) {
+                // Try to repair common truncation cases: if array was cut, try to close it at last '}' and append ']'
+                String s = json;
+                String repaired = null;
+                if (s != null && s.startsWith("[")) {
+                    int lastObj = s.lastIndexOf('}');
+                    if (lastObj > 0) {
+                        String cand = s.substring(0, lastObj + 1) + "]";
+                        try {
+                            var root2 = JsonParser.parseString(cand);
+                            if (root2.isJsonArray()) repaired = cand;
+                        } catch (Exception ignored) {}
+                    }
+                }
+
+                // If not repaired yet, progressively trim the tail until it parses (limit iterations)
+                if (repaired == null) {
+                    int maxTrim = Math.min(1000, s.length());
+                    for (int trim = 1; trim <= maxTrim; trim++) {
+                        try {
+                            String cand = s.substring(0, s.length() - trim);
+                            var root2 = JsonParser.parseString(cand);
+                            if (root2.isJsonArray()) { repaired = cand; break; }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+
+                if (repaired != null) {
+                    // parse repaired content and rewrite the file atomically
+                    try {
+                        var root = JsonParser.parseString(repaired).getAsJsonArray();
+                        for (var je : root) {
+                            try {
+                                var o     = je.getAsJsonObject();
+                                String icon  = o.has("icon")    ? o.get("icon").getAsString()    : "";
+                                String name  = o.has("name")    ? o.get("name").getAsString()    : "";
+                                int    color = o.has("color")   ? o.get("color").getAsInt()      : 0xFFFFFF;
+                                String msg   = o.has("message") ? o.get("message").getAsString() : "";
+                                long   ts    = o.has("ts")      ? o.get("ts").getAsLong()        : 0L;
+                                list.add(new HistorySyncPayload.Entry(icon, name, color, msg, ts));
+                            } catch (Exception ignored) {}
+                        }
+
+                        // rewrite cleaned file atomically
+                        try {
+                            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                            Files.writeString(tmp, GSON.toJson(root));
+                            Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                            System.out.println("[PTDialogue] Repaired history file: " + file.toAbsolutePath());
+                        } catch (Exception ex) {
+                            // If atomic move not supported, try non-atomic replace
+                            try {
+                                Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+                                Files.writeString(tmp, GSON.toJson(root));
+                                Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            } catch (Exception ex2) {
+                                System.err.println("[PTDialogue] Failed to rewrite repaired history file: " + ex2.getMessage());
+                            }
+                        }
+
+                    } catch (Exception ex) {
+                        System.err.println("[PTDialogue] Failed to parse repaired history for " + file.getFileName());
+                    }
+                } else {
+                    System.err.println("[PTDialogue] Could not recover corrupted history file: " + file.getFileName());
+                }
             }
         } catch (IOException ex) {
             System.err.println("[PTDialogue] Failed to load history for " + file.getFileName()
@@ -138,7 +208,15 @@ public class HistoryManager {
                 o.addProperty("ts",      e.timestamp());
                 arr.add(o);
             }
-            Files.writeString(file, GSON.toJson(arr));
+            // write atomically via temp file and move
+            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            Files.writeString(tmp, GSON.toJson(arr));
+            try {
+                Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (Exception ex) {
+                // fallback if atomic move unsupported
+                Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException ex) {
             System.err.println("[PTDialogue] Failed to save history for " + file.getFileName()
                     + ": " + ex.getMessage());

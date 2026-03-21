@@ -78,13 +78,28 @@ public class IconSyncManager {
                 fetchAndCacheHead(name, server);
             }
 
-            // Delay sync by 1 second to ensure client is ready
+            // Delay sync by 1 second to ensure client networking is fully initialized
             server.execute(() -> {
                 // Schedule with delay using a simple approach
                 CompletableFuture.runAsync(() -> {
                     try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
                     server.execute(() -> {
                         if (player.isDisconnected()) return;
+
+                        // Enforce server-side mod requirement: if the client does not support our mod's
+                        // networking channel, disconnect them with an explanatory message.
+                        try {
+                            boolean hasMod = ServerPlayNetworking.canSend(player, IconSyncPayload.ID);
+                            if (!hasMod) {
+                                System.out.println("[PTDialogue] Disconnecting player " + name + " — missing PTDialogue mod.");
+                                player.networkHandler.disconnect(net.minecraft.text.Text.literal("You must install the PTDialogue mod to join this server."));
+                                return;
+                            }
+                        } catch (Throwable t) {
+                            // If canSend isn't available for some reason, fall back to allowing join and logging
+                            System.err.println("[PTDialogue] Warning: failed to check client mod presence: " + t.getMessage());
+                        }
+
                         System.out.println("[PTDialogue] Sending icons and heads to " + name);
                         sendAllIcons(player);
                         sendAllCachedHeads(player);

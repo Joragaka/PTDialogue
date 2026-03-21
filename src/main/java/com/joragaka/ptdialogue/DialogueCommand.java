@@ -55,13 +55,12 @@ public class DialogueCommand {
             // /dialogue <targets> <icon> <name> <colorname> <message...>
             dispatcher.register(
                 CommandManager.literal("dialogue")
-                    .requires(source -> source.getServer() != null)  // Требует выполнения на сервере (исключает клиент)
+                    .requires(source -> source.getServer() != null)
                     .then(
                         CommandManager.argument("targets", EntityArgumentType.players())
                             .then(
                                 CommandManager.argument("icon", StringArgumentType.string())
                                     .then(
-                                        // Разрешаем использовать в имени кавычки и пробелы: StringArgumentType.string()
                                         CommandManager.argument("name", StringArgumentType.string())
                                             .then(
                                                 CommandManager.argument("colorname", StringArgumentType.word())
@@ -79,10 +78,10 @@ public class DialogueCommand {
 
     private static int executeDialogue(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
         var targets = EntityArgumentType.getPlayers(context, "targets");
-        String icon = StringArgumentType.getString(context, "icon");
-        String name = StringArgumentType.getString(context, "name");
+        String icon      = StringArgumentType.getString(context, "icon");
+        String name      = StringArgumentType.getString(context, "name");
         String colorname = StringArgumentType.getString(context, "colorname");
-        String message = StringArgumentType.getString(context, "message");
+        String message   = StringArgumentType.getString(context, "message");
 
         // Убрана прежняя валидация, теперь имя может содержать кириллицу и быть в кавычках
 

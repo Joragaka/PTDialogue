@@ -56,7 +56,7 @@ public class DialogueConfigScreen {
         AbstractConfigListEntry<Float> edgePaddingEntry = entryBuilder.startFloatField(
                         Text.translatable("config.ptdialogue.edgePadding"),
                         DialogueClientConfig.getEdgePadding())
-                .setDefaultValue(0.25f)
+                .setDefaultValue(0.3f)
                 .setMin(0.0f)
                 .setMax(0.45f)
                 .setTooltip(Text.translatable("config.ptdialogue.edgePadding.tooltip"))

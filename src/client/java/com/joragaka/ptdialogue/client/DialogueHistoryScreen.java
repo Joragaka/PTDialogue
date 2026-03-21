@@ -53,13 +53,21 @@ public class DialogueHistoryScreen extends Screen {
 
     private static class BakedEntry {
         final DialogueHistory.Entry source;
-        final List<OrderedText> wrappedLines;
-        final int entryHeight; // GUI units
-        final int maxLineWidthUnscaled; // unscaled renderer units
+        final OrderedText nameLine;
+        final int nameWidthUnscaled;
+        final OrderedText firstMsgLine;       // message part that fits on line 0 next to name
+        final List<OrderedText> subsequentLines; // remaining message lines at full width
+        final int entryHeight;
+        final int maxLineWidthUnscaled;
 
-        BakedEntry(DialogueHistory.Entry source, List<OrderedText> wrappedLines, int entryHeight, int maxLineWidthUnscaled) {
+        BakedEntry(DialogueHistory.Entry source, OrderedText nameLine, int nameWidthUnscaled,
+                   OrderedText firstMsgLine, List<OrderedText> subsequentLines,
+                   int entryHeight, int maxLineWidthUnscaled) {
             this.source = source;
-            this.wrappedLines = wrappedLines;
+            this.nameLine = nameLine;
+            this.nameWidthUnscaled = nameWidthUnscaled;
+            this.firstMsgLine = firstMsgLine;
+            this.subsequentLines = subsequentLines;
             this.entryHeight = entryHeight;
             this.maxLineWidthUnscaled = maxLineWidthUnscaled;
         }
@@ -132,23 +140,66 @@ public class DialogueHistoryScreen extends Screen {
 
         int totalHeight = 0;
         for (DialogueHistory.Entry entry : DialogueHistory.getEntries()) {
-            MutableText displayText = Text.empty();
-            displayText.append(Text.literal("[" + entry.getName() + "]: ").styled(s -> s.withColor(entry.getNameColor())));
-            displayText.append(entry.getMessage());
+            MutableText nameText = DialoguePacketHandler.buildNamePrefix(entry.getName(), entry.getNameColor());
+            OrderedText nameLine = nameText.asOrderedText();
+            int nameWidthUnscaled = textRenderer.getWidth(nameLine);
 
-            List<OrderedText> wrapped = textRenderer.wrapLines(displayText, wrapWidthUnscaled);
+            Text messageText = entry.getMessage();
+            int firstLineWidth = Math.max(1, wrapWidthUnscaled - nameWidthUnscaled);
 
-            int textHeightGui  = wrapped.size() * scaledLineSpacing;
+            // Word-based wrapping: first line at reduced width, remainder at full width
+            List<OrderedText> firstWrap = textRenderer.wrapLines(messageText, firstLineWidth);
+
+            OrderedText firstMsgLine = null;
+            java.util.List<OrderedText> subsequentLines = new java.util.ArrayList<>();
+
+            if (!firstWrap.isEmpty()) {
+                firstMsgLine = firstWrap.get(0);
+            }
+
+            if (firstWrap.size() > 1) {
+                int[] firstLineCharCount = {0};
+                firstWrap.get(0).accept((index, style, codePoint) -> {
+                    firstLineCharCount[0]++;
+                    return true;
+                });
+                int skipChars = firstLineCharCount[0];
+
+                // Skip whitespace between first line and remainder
+                String fullStr = messageText.getString();
+                while (skipChars < fullStr.length() && fullStr.charAt(skipChars) == ' ') {
+                    skipChars++;
+                }
+                int finalSkipChars = skipChars;
+
+                MutableText styledRemainder = Text.empty().copy();
+                int[] idx = {0};
+                messageText.asOrderedText().accept((index, style, codePoint) -> {
+                    if (idx[0] >= finalSkipChars) {
+                        styledRemainder.append(Text.literal(new String(Character.toChars(codePoint))).setStyle(style));
+                    }
+                    idx[0]++;
+                    return true;
+                });
+                subsequentLines.addAll(textRenderer.wrapLines(styledRemainder, wrapWidthUnscaled));
+            }
+
+            int totalLines = 1 + subsequentLines.size();
+            int textHeightGui  = totalLines * scaledLineSpacing;
             int innerHeightGui = Math.max(headSizeGui, textHeightGui);
             int entryHeightGui = innerHeightGui + boxPaddingGui * 2;
 
-            int maxLineW = 0;
-            for (OrderedText line : wrapped) {
+            int maxLineW = nameWidthUnscaled;
+            if (firstMsgLine != null) {
+                int line0W = nameWidthUnscaled + textRenderer.getWidth(firstMsgLine);
+                if (line0W > maxLineW) maxLineW = line0W;
+            }
+            for (OrderedText line : subsequentLines) {
                 int w = textRenderer.getWidth(line);
                 if (w > maxLineW) maxLineW = w;
             }
 
-            bakedEntries.add(new BakedEntry(entry, wrapped, entryHeightGui, maxLineW));
+            bakedEntries.add(new BakedEntry(entry, nameLine, nameWidthUnscaled, firstMsgLine, subsequentLines, entryHeightGui, maxLineW));
             totalHeight += entryHeightGui;
         }
 
@@ -228,11 +279,12 @@ public class DialogueHistoryScreen extends Screen {
             int areaTop = vp;
             int areaBottom = this.height - vp;
 
+            // enableScissor takes (left, top, right, bottom) in GUI coordinates
+            int visibleHeight = this.height - vp * 2;
             drawContext.enableScissor(HORIZONTAL_PADDING, areaTop, this.width - HORIZONTAL_PADDING, areaBottom);
 
             // We'll render entries without scale animation — only alpha fade
             int centerX = this.width / 2;
-            int visibleHeight = this.height - vp * 2;
             int effectiveScroll = (int) scrollOffset;
             int y = areaTop - effectiveScroll;
 
@@ -259,7 +311,16 @@ public class DialogueHistoryScreen extends Screen {
                     drawEntryHead(drawContext, baked.source.getIcon(), headX, headY, headSizeScaled, eased);
 
                     int textX = headX + headSizeScaled + headPaddingScaled;
-                    int textStartY = y + boxPaddingScaled;
+
+                    // Vertically center text inside the inner content area
+                    int unscaledLineSpacing = client.textRenderer.fontHeight + 2;
+                    int scaledLineSpacing = Math.max(1, (int) Math.ceil(unscaledLineSpacing * currentTextScale));
+                    int totalLines = 1 + baked.subsequentLines.size();
+                    int textHeightGui = totalLines * scaledLineSpacing;
+                    int innerHeightGui = Math.max(headSizeScaled, textHeightGui);
+                    int textStartY = y + boxPaddingScaled + ((innerHeightGui - textHeightGui) / 2);
+                    // Nudge text down slightly to visually center (MC fonts have high ascent)
+                    textStartY += 2;
 
                     var matricesLocal = drawContext.getMatrices();
                     float m00 = matricesLocal.m00(), m01 = matricesLocal.m01();
@@ -269,12 +330,24 @@ public class DialogueHistoryScreen extends Screen {
 
                     int drawX = Math.max(0, Math.round(textX / Math.max(0.001f, currentTextScale)));
                     int currentY = Math.max(0, Math.round(textStartY / Math.max(0.001f, currentTextScale)));
-                    int unscaledLineSpacing = client.textRenderer.fontHeight + 2;
+                    int unscaledLineSpacingDraw = client.textRenderer.fontHeight + 2;
 
                     int textColor = applyAlphaToColor(0xFFFFFFFF, eased);
-                    for (OrderedText line : baked.wrappedLines) {
+
+                    // Draw name on line 0
+                    drawContext.drawText(textRenderer, baked.nameLine, drawX, currentY, textColor, false);
+
+                    // Draw first message part right after name on line 0
+                    if (baked.firstMsgLine != null) {
+                        int msgDrawX = drawX + baked.nameWidthUnscaled;
+                        drawContext.drawText(textRenderer, baked.firstMsgLine, msgDrawX, currentY, textColor, false);
+                    }
+                    currentY += unscaledLineSpacingDraw;
+
+                    // Draw subsequent lines at full width
+                    for (OrderedText line : baked.subsequentLines) {
                         drawContext.drawText(textRenderer, line, drawX, currentY, textColor, false);
-                        currentY += unscaledLineSpacing;
+                        currentY += unscaledLineSpacingDraw;
                     }
 
                     matricesLocal.set(m00, m01, m10, m11, m20, m21);

@@ -123,10 +123,10 @@ public class DialogueRenderer {
         int boxPadding = Math.max(0, (int) Math.ceil(boxPaddingPx  / deviceScale));
 
         // Build styled text
-        MutableText namePrefixText = Text.literal("[" + name + "]: ").styled(s -> s.withColor(nameColor));
-        MutableText fullText = Text.empty();
-        fullText.append(namePrefixText);
-        fullText.append(dialogue);
+        // Build name prefix: [Name] with color handling (supports JSON names and color=0)
+        MutableText namePrefixText = DialoguePacketHandler.buildNamePrefix(name, nameColor);
+        OrderedText nameOrdered = namePrefixText.asOrderedText();
+        int nameWidthUnscaled = textRenderer.getWidth(nameOrdered);
 
         // Edge padding (fraction of framebuffer width → GUI units)
         float edgePaddingFraction = overrideEdgePadding >= 0 ? overrideEdgePadding : DialogueClientConfig.getEdgePadding();
@@ -138,7 +138,51 @@ public class DialogueRenderer {
 
         // Wrap text: renderer draws at scale=1; we will scale the matrix, so wrap in unscaled units
         int wrapWidthUnscaled = Math.max(1, (int) Math.floor(maxContentWidth / Math.max(0.001f, textScale)));
-        List<OrderedText> wrappedLines = textRenderer.wrapLines(fullText, wrapWidthUnscaled);
+
+        // First line has reduced width (name occupies space), subsequent lines use full width
+        int firstLineWidth = Math.max(1, wrapWidthUnscaled - nameWidthUnscaled);
+
+        // Word-based wrapping: wrap message at firstLineWidth to get what fits on line 0,
+        // then wrap remainder at full width
+        List<OrderedText> firstWrap = textRenderer.wrapLines(dialogue, firstLineWidth);
+
+        OrderedText firstMsgLine = null;
+        java.util.List<OrderedText> subsequentLines = new java.util.ArrayList<>();
+
+        if (!firstWrap.isEmpty()) {
+            firstMsgLine = firstWrap.get(0);
+        }
+
+        // If message needs more than one line, re-wrap at full width for subsequent lines
+        if (firstWrap.size() > 1) {
+            // Get char count of first line to extract styled remainder
+            int[] firstLineCharCount = {0};
+            firstWrap.get(0).accept((index, style, codePoint) -> {
+                firstLineCharCount[0]++;
+                return true;
+            });
+            int skipChars = firstLineCharCount[0];
+
+            // Skip whitespace between first line and remainder (word-wrap boundary)
+            String fullStr = dialogue.getString();
+            while (skipChars < fullStr.length() && fullStr.charAt(skipChars) == ' ') {
+                skipChars++;
+            }
+            int finalSkipChars = skipChars;
+
+            MutableText styledRemainder = Text.empty().copy();
+            int[] idx = {0};
+            dialogue.asOrderedText().accept((index, style, codePoint) -> {
+                if (idx[0] >= finalSkipChars) {
+                    styledRemainder.append(Text.literal(new String(Character.toChars(codePoint))).setStyle(style));
+                }
+                idx[0]++;
+                return true;
+            });
+            subsequentLines.addAll(textRenderer.wrapLines(styledRemainder, wrapWidthUnscaled));
+        }
+
+        int totalLines = 1 + subsequentLines.size();
 
         // Vertical position (distFromCenter is treated as if defined at 1080p,
         // then scaled proportionally to the actual window height → GUI units)
@@ -149,14 +193,18 @@ public class DialogueRenderer {
         // Line spacing
         int unscaledLineSpacing = rendererFontHeight + 2;
         int scaledLineSpacing   = (int) Math.ceil(unscaledLineSpacing * textScale);
-        int totalTextHeight     = wrappedLines.size() * scaledLineSpacing;
+        int totalTextHeight     = totalLines * scaledLineSpacing;
 
         // Box dimensions
         int contentHeight = Math.max(headSize, totalTextHeight);
         int boxHeight     = contentHeight + boxPadding * 2;
 
-        int actualTextWidthUnscaled = 0;
-        for (OrderedText line : wrappedLines) {
+        int actualTextWidthUnscaled = nameWidthUnscaled;
+        if (firstMsgLine != null) {
+            int line0W = nameWidthUnscaled + textRenderer.getWidth(firstMsgLine);
+            if (line0W > actualTextWidthUnscaled) actualTextWidthUnscaled = line0W;
+        }
+        for (OrderedText line : subsequentLines) {
             int w = textRenderer.getWidth(line);
             if (w > actualTextWidthUnscaled) actualTextWidthUnscaled = w;
         }
@@ -182,8 +230,8 @@ public class DialogueRenderer {
         float spacingDiff = (float) scaledLineSpacing - idealScaledSpacing;
         int roundingCompensation = Math.round(spacingDiff / 2.0f);
         textStartY += roundingCompensation;
-        // Apply a small downward nudge (1 GUI pixel) to visually center the text inside the box.
-        textStartY += 1;
+        // Apply a small downward nudge (2 GUI pixels) to visually center the text inside the box.
+        textStartY += 2;
         int textArgb   = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
 
         var matrices = drawContext.getMatrices();
@@ -191,7 +239,19 @@ public class DialogueRenderer {
 
         int drawX    = Math.max(0, Math.round(textX      / Math.max(0.001f, textScale)));
         int currentY = Math.max(0, Math.round(textStartY / Math.max(0.001f, textScale)));
-        for (OrderedText line : wrappedLines) {
+
+        // Draw name on line 0
+        drawContext.drawText(textRenderer, nameOrdered, drawX, currentY, textArgb, false);
+
+        // Draw first message part right after name on line 0
+        if (firstMsgLine != null) {
+            int msgDrawX = drawX + nameWidthUnscaled;
+            drawContext.drawText(textRenderer, firstMsgLine, msgDrawX, currentY, textArgb, false);
+        }
+        currentY += unscaledLineSpacing;
+
+        // Draw subsequent lines at full width
+        for (OrderedText line : subsequentLines) {
             drawContext.drawText(textRenderer, line, drawX, currentY, textArgb, false);
             currentY += unscaledLineSpacing;
         }

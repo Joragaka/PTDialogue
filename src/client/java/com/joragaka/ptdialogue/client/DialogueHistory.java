@@ -44,8 +44,9 @@ public class DialogueHistory {
     public static void loadFromServer(List<HistorySyncPayload.Entry> entries) {
         history.clear();
         for (var e : entries) {
-            history.add(new Entry(e.icon(), e.name(), e.color(),
-                    Text.literal(e.message()), e.timestamp()));
+            // messages on disk are stored as JSON component arrays/objects. Parse them to Text.
+            Text parsed = com.joragaka.ptdialogue.client.DialoguePacketHandler.parseJsonToText(e.message());
+            history.add(new Entry(e.icon(), e.name(), e.color(), parsed, e.timestamp()));
         }
         System.out.println("[ptdialogue] Loaded " + history.size() + " history entries from server");
     }

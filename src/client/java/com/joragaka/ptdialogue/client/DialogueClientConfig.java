@@ -10,7 +10,7 @@ import java.nio.file.Path;
 
 /**
  * Client-side configuration for the dialogue UI.
- * Stored in config/ptloreicons/dialogue_config.json
+ * Stored in config/ptdialogue/dialogue_config.json
  */
 public class DialogueClientConfig {
 
@@ -25,7 +25,7 @@ public class DialogueClientConfig {
     private static float windowScale = 1.0f;
 
     /** Edge padding as fraction of screen width before text wraps. Default 0.20 (20%). */
-    private static float edgePadding = 0.25f;
+    private static float edgePadding = 0.3f;
 
     /** Vertical padding as fraction of screen height used by history screen (top+bottom). Default 0.075 (~7.5%). */
     private static float verticalPaddingFraction = 0.075f;
@@ -144,7 +144,7 @@ public class DialogueClientConfig {
     private static Path getConfigPath() {
         return net.fabricmc.loader.api.FabricLoader.getInstance()
                 .getConfigDir()
-                .resolve("ptloreicons")
+                .resolve("ptdialogue")
                 .resolve("dialogue_config.json");
     }
 }
