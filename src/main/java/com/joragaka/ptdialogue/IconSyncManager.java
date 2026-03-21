@@ -25,13 +25,13 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Server-side manager that:
- * 1. Sends all custom icons from config/ptloreicons/ to connecting clients
+ * 1. Sends all custom icons from config/ptlore/ptdialogue/ to connecting clients
  * 2. Downloads & caches player head textures via Mojang API
  * 3. Distributes head textures to all clients
  */
 public class IconSyncManager {
 
-    private static final String ICONS_FOLDER = "ptloreicons";
+    private static final String ICONS_FOLDER = "ptlore";
     private static final String HEADS_SUBFOLDER = ".skincache/heads";
 
     private static final HttpClient HTTP = HttpClient.newBuilder()
@@ -419,9 +419,11 @@ public class IconSyncManager {
     // ─────────────────── Paths ───────────────────
 
     private static Path getIconsDir() {
-        return net.fabricmc.loader.api.FabricLoader.getInstance()
-                .getConfigDir()
-                .resolve(ICONS_FOLDER);
+        var loader = net.fabricmc.loader.api.FabricLoader.getInstance();
+        Path configDir = loader.getConfigDir();
+
+        // config/ptlore/ptdialogue/
+        return configDir.resolve("ptlore").resolve("ptdialogue");
     }
 
     private static Path getHeadsDir() {

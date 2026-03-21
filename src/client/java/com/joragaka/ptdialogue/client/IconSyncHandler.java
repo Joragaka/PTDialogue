@@ -59,7 +59,7 @@ public class IconSyncHandler {
             if (path.startsWith(".heads/")) {
                 handleHeadSync(path, data);
             } else {
-                // Custom icon from server's ptloreicons/
+                // Custom icon from server's ptlore/ptdialogue/
                 handleCustomIconSync(path, data, md5);
             }
         } catch (Exception e) {
@@ -69,7 +69,7 @@ public class IconSyncHandler {
 
     /**
      * Handle a custom icon synced from server.
-     * Saves to config/ptloreicons/ and stores the MD5 hash for tamper protection.
+     * Saves to config/ptlore/ptdialogue/ and stores the MD5 hash for tamper protection.
      */
     private static void handleCustomIconSync(String relativePath, byte[] data, String md5) throws Exception {
         Path iconsDir = getIconsDir();
@@ -145,9 +145,9 @@ public class IconSyncHandler {
     // ─────────────────── Paths ───────────────────
 
     private static Path getIconsDir() {
-        return net.fabricmc.loader.api.FabricLoader.getInstance()
-                .getConfigDir()
-                .resolve("ptloreicons");
+        var loader = net.fabricmc.loader.api.FabricLoader.getInstance();
+        Path configDir = loader.getConfigDir();
+        return configDir.resolve("ptlore").resolve("ptdialogue");
     }
 
 

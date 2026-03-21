@@ -7,8 +7,8 @@ import net.minecraft.util.Identifier;
 
 /**
  * S2C payload: sends a single icon file (PNG) from server to client.
- * Used for syncing custom icons from server's config/ptloreicons/ folder
- * and pre-cached player head textures.
+ * Used for syncing custom icons from server's config/ptlore/ptdialogue/ (preferred) or
+ * config/ptlore/ptdialogue/ (fallback) and pre-cached player head textures.
  *
  * @param path     relative file path (e.g. "icon.png", "heads/player.png")
  * @param data     raw PNG bytes
@@ -33,4 +33,3 @@ public record IconSyncPayload(String path, byte[] data, String md5) implements C
         return ID;
     }
 }
-

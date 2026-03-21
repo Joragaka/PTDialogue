@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
- * Loads and caches custom PNG icons from config/ptloreicons/.
+ * Loads and caches custom PNG icons from config/ptlore/ptdialogue/.
  * Hot-reloads files that change on disk.
  */
 public class CustomIconCache {
@@ -158,12 +158,16 @@ public class CustomIconCache {
     private static Path getIconsDir() {
         Path dir = iconsDir;
         if (dir == null) {
-            dir = net.fabricmc.loader.api.FabricLoader.getInstance()
-                    .getConfigDir()
-                    .resolve("ptloreicons");
+            dir = findIconsDir();
             try { Files.createDirectories(dir); } catch (Exception ignored) {}
             iconsDir = dir;
         }
         return dir;
+    }
+
+    private static Path findIconsDir() {
+        var loader = net.fabricmc.loader.api.FabricLoader.getInstance();
+        Path configDir = loader.getConfigDir();
+        return configDir.resolve("ptlore").resolve("ptdialogue");
     }
 }

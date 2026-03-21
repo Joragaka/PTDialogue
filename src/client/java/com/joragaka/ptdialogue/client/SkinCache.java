@@ -128,11 +128,9 @@ public class SkinCache {
     private static Path getCacheDir() {
         Path dir = cacheDir;
         if (dir == null) {
-            dir = net.fabricmc.loader.api.FabricLoader.getInstance()
-                    .getConfigDir()
-                    .resolve("ptloreicons")
-                    .resolve(".skincache")
-                    .resolve("heads");
+            var loader = net.fabricmc.loader.api.FabricLoader.getInstance();
+            Path configDir = loader.getConfigDir();
+            dir = configDir.resolve("ptlore").resolve("ptdialogue").resolve(".skincache").resolve("heads");
             cacheDir = dir;
         }
         return dir;

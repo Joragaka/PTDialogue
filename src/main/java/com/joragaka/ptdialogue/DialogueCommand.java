@@ -96,7 +96,7 @@ public class DialogueCommand {
         }
 
         context.getSource().sendFeedback(
-            () -> Text.literal("Диалог отправлен " + targets.size() + " игроку(ам)"),
+            () -> Text.translatable("ptdialogue.command.dialogue.sent", targets.size()),
             false
         );
         return Command.SINGLE_SUCCESS;

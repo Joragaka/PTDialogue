@@ -4,19 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="Add some links">
+    <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="Alt fonts via resourcepack, + raw json compability for names">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueClientConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueClientConfig.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueConfigScreen.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueConfigScreen.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialoguePacketHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialoguePacketHandler.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/resources/assets/ptdialogue/lang/en_us.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/resources/assets/ptdialogue/lang/en_us.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/resources/assets/ptdialogue/lang/ru_ru.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/resources/assets/ptdialogue/lang/ru_ru.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/CustomIconCache.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/CustomIconCache.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/IconSyncHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/IconSyncHandler.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncPayload.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncPayload.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -70,21 +64,21 @@
   <component name="ProjectViewState">
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Gradle.D:/MPROJECTS/PtLoreThing [wrapper].executor": "Run",
-    "Gradle.ptlorething [build].executor": "Run",
-    "Gradle.ptlorething [runClient].executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "master",
-    "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "D:/MPROJECTS/PTDialogue",
-    "settings.editor.selected.configurable": "preferences.lookFeel"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Gradle.D:/MPROJECTS/PtLoreThing [wrapper].executor&quot;: &quot;Run&quot;,
+    &quot;Gradle.ptlorething [build].executor&quot;: &quot;Run&quot;,
+    &quot;Gradle.ptlorething [runClient].executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/MPROJECTS/PTDialogue&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.lookFeel&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="D:\MPROJECTS\PtLoreThing\src\main\resources\assets\ptlorething" />
@@ -170,11 +164,20 @@
       <option name="project" value="LOCAL" />
       <updated>1774046979377</updated>
     </task>
-    <option name="localTasksCounter" value="2" />
+    <task id="LOCAL-00002" summary="Alt fonts via resourcepack, + raw json compability for names">
+      <option name="closed" value="true" />
+      <created>1774102735893</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1774102735893</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Add some links" />
-    <option name="LAST_COMMIT_MESSAGE" value="Add some links" />
+    <MESSAGE value="Alt fonts via resourcepack, + raw json compability for names" />
+    <option name="LAST_COMMIT_MESSAGE" value="Alt fonts via resourcepack, + raw json compability for names" />
   </component>
 </project>
