@@ -5,10 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="bug fixes">
-      <change afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/TextWrapHelper.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -186,7 +183,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774114650948</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="bug fixes">
+      <option name="closed" value="true" />
+      <created>1774203921813</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1774203921813</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
