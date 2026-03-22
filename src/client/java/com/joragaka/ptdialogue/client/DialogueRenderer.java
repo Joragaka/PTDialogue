@@ -127,6 +127,8 @@ public class DialogueRenderer {
         MutableText namePrefixText = DialoguePacketHandler.buildNamePrefix(name, nameColor);
         OrderedText nameOrdered = namePrefixText.asOrderedText();
         int nameWidthUnscaled = textRenderer.getWidth(nameOrdered);
+        // Debug: print name info
+        // (debug logs removed)
 
         // Edge padding (fraction of framebuffer width → GUI units)
         float edgePaddingFraction = overrideEdgePadding >= 0 ? overrideEdgePadding : DialogueClientConfig.getEdgePadding();
@@ -137,50 +139,23 @@ public class DialogueRenderer {
         int maxContentWidth= screenWidth - edgePadding * 2 - textAreaLeft - boxPadding * 2;
 
         // Wrap text: renderer draws at scale=1; we will scale the matrix, so wrap in unscaled units
-        int wrapWidthUnscaled = Math.max(1, (int) Math.floor(maxContentWidth / Math.max(0.001f, textScale)));
+        int wrapWidthUnscaled = Math.max(1, (int) Math.ceil(maxContentWidth / Math.max(0.001f, textScale)));
+        // small tolerance to avoid overly-early wrapping
+        wrapWidthUnscaled = Math.max(1, wrapWidthUnscaled + 1);
 
         // First line has reduced width (name occupies space), subsequent lines use full width
         int firstLineWidth = Math.max(1, wrapWidthUnscaled - nameWidthUnscaled);
 
-        // Word-based wrapping: wrap message at firstLineWidth to get what fits on line 0,
-        // then wrap remainder at full width
-        List<OrderedText> firstWrap = textRenderer.wrapLines(dialogue, firstLineWidth);
-
-        OrderedText firstMsgLine = null;
+        // Use helper to split message into firstMsgLine (fits next to name) and a styled remainder
+        TextWrapHelper.SplitResult split = TextWrapHelper.splitFirstLine(textRenderer, dialogue, firstLineWidth);
+        OrderedText firstMsgLine = split.firstLine;
         java.util.List<OrderedText> subsequentLines = new java.util.ArrayList<>();
-
-        if (!firstWrap.isEmpty()) {
-            firstMsgLine = firstWrap.get(0);
+        if (split.remainder != null && !split.remainder.getString().isEmpty()) {
+            subsequentLines.addAll(textRenderer.wrapLines(split.remainder, wrapWidthUnscaled));
         }
 
-        // If message needs more than one line, re-wrap at full width for subsequent lines
-        if (firstWrap.size() > 1) {
-            // Get char count of first line to extract styled remainder
-            int[] firstLineCharCount = {0};
-            firstWrap.get(0).accept((index, style, codePoint) -> {
-                firstLineCharCount[0]++;
-                return true;
-            });
-            int skipChars = firstLineCharCount[0];
-
-            // Skip whitespace between first line and remainder (word-wrap boundary)
-            String fullStr = dialogue.getString();
-            while (skipChars < fullStr.length() && fullStr.charAt(skipChars) == ' ') {
-                skipChars++;
-            }
-            int finalSkipChars = skipChars;
-
-            MutableText styledRemainder = Text.empty().copy();
-            int[] idx = {0};
-            dialogue.asOrderedText().accept((index, style, codePoint) -> {
-                if (idx[0] >= finalSkipChars) {
-                    styledRemainder.append(Text.literal(new String(Character.toChars(codePoint))).setStyle(style));
-                }
-                idx[0]++;
-                return true;
-            });
-            subsequentLines.addAll(textRenderer.wrapLines(styledRemainder, wrapWidthUnscaled));
-        }
+        // Debug: print wrap/first widths to compare with history
+        // (debug logs removed)
 
         int totalLines = 1 + subsequentLines.size();
 
@@ -241,7 +216,14 @@ public class DialogueRenderer {
         int currentY = Math.max(0, Math.round(textStartY / Math.max(0.001f, textScale)));
 
         // Draw name on line 0
-        drawContext.drawText(textRenderer, nameOrdered, drawX, currentY, textArgb, false);
+        try {
+            drawContext.drawText(textRenderer, nameOrdered, drawX, currentY, textArgb, false);
+        } catch (Throwable t) {
+            // Fallback: draw literal name to ensure visibility
+            try {
+                drawContext.drawText(textRenderer, Text.literal(name == null ? "" : name).asOrderedText(), drawX, currentY, textArgb, false);
+            } catch (Throwable ignored) {}
+        }
 
         // Draw first message part right after name on line 0
         if (firstMsgLine != null) {

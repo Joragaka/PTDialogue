@@ -53,20 +53,21 @@ public class DialogueHistoryScreen extends Screen {
 
     private static class BakedEntry {
         final DialogueHistory.Entry source;
-        final OrderedText nameLine;
+        final OrderedText nameLine; // rendered name prefix (e.g. "[Name]: ")
         final int nameWidthUnscaled;
-        final OrderedText firstMsgLine;       // message part that fits on line 0 next to name
+        final OrderedText firstMsgLine;       // message part that fits on line 0 next to name (or null)
+        final OrderedText fullFirstLine;     // optional: full first line including name (when used)
         final List<OrderedText> subsequentLines; // remaining message lines at full width
         final int entryHeight;
         final int maxLineWidthUnscaled;
 
         BakedEntry(DialogueHistory.Entry source, OrderedText nameLine, int nameWidthUnscaled,
-                   OrderedText firstMsgLine, List<OrderedText> subsequentLines,
-                   int entryHeight, int maxLineWidthUnscaled) {
+                   OrderedText firstMsgLine, OrderedText fullFirstLine, List<OrderedText> subsequentLines, int entryHeight, int maxLineWidthUnscaled) {
             this.source = source;
             this.nameLine = nameLine;
             this.nameWidthUnscaled = nameWidthUnscaled;
             this.firstMsgLine = firstMsgLine;
+            this.fullFirstLine = fullFirstLine;
             this.subsequentLines = subsequentLines;
             this.entryHeight = entryHeight;
             this.maxLineWidthUnscaled = maxLineWidthUnscaled;
@@ -100,7 +101,8 @@ public class DialogueHistoryScreen extends Screen {
         if (client == null) return;
 
         TextRenderer textRenderer = client.textRenderer;
-        int screenWidth = this.width;
+        int screenWidth = client.getWindow().getScaledWidth();
+        int screenHeight = client.getWindow().getScaledHeight();
         int fbW = client.getWindow().getWidth();
 
         float storedScale = DialogueClientConfig.getStoredWindowScale();
@@ -133,55 +135,42 @@ public class DialogueHistoryScreen extends Screen {
 
         int textAreaLeft = headSizeGui + headPaddingGui;
         int maxContentWidthGui = Math.max(1, screenWidth - edgePaddingGui * 2 - textAreaLeft - boxPaddingGui * 2);
-        int wrapWidthUnscaled  = Math.max(1, (int) Math.floor(maxContentWidthGui / Math.max(0.001f, currentTextScale)));
+        int wrapWidthUnscaled  = Math.max(1, (int) Math.ceil(maxContentWidthGui / Math.max(0.001f, currentTextScale)));
+        // small tolerance to avoid overly-early wrapping (match DialogueRenderer)
+        wrapWidthUnscaled = Math.max(1, wrapWidthUnscaled + 1);
 
         int unscaledLineSpacing = textRenderer.fontHeight + 2;
         int scaledLineSpacing   = Math.max(1, (int) Math.ceil(unscaledLineSpacing * currentTextScale));
 
         int totalHeight = 0;
         for (DialogueHistory.Entry entry : DialogueHistory.getEntries()) {
-            MutableText nameText = DialoguePacketHandler.buildNamePrefix(entry.getName(), entry.getNameColor());
-            OrderedText nameLine = nameText.asOrderedText();
-            int nameWidthUnscaled = textRenderer.getWidth(nameLine);
+            // helper to extract plain string from OrderedText for debug
+            java.util.function.Function<OrderedText, String> orderedToPlain = (ot) -> {
+                if (ot == null) return "";
+                StringBuilder sb = new StringBuilder();
+                try {
+                    ot.accept((index, style, codePoint) -> {
+                        sb.appendCodePoint(codePoint);
+                        return true;
+                    });
+                } catch (Throwable ignored) {}
+                return sb.toString();
+            };
 
-            Text messageText = entry.getMessage();
+            DialogueHistory.Entry eEntry = entry; // for lambda safety
+             MutableText nameText = DialoguePacketHandler.buildNamePrefix(entry.getName(), entry.getNameColor());
+             OrderedText nameLine = nameText.asOrderedText();
+             int nameWidthUnscaled = textRenderer.getWidth(nameLine);
+
+             Text messageText = entry.getMessage();
+            // First line has reduced width (name occupies space), subsequent lines use full width
             int firstLineWidth = Math.max(1, wrapWidthUnscaled - nameWidthUnscaled);
 
-            // Word-based wrapping: first line at reduced width, remainder at full width
-            List<OrderedText> firstWrap = textRenderer.wrapLines(messageText, firstLineWidth);
-
-            OrderedText firstMsgLine = null;
+            TextWrapHelper.SplitResult split = TextWrapHelper.splitFirstLine(textRenderer, messageText, firstLineWidth);
+            OrderedText firstMsgLine = split.firstLine;
             java.util.List<OrderedText> subsequentLines = new java.util.ArrayList<>();
-
-            if (!firstWrap.isEmpty()) {
-                firstMsgLine = firstWrap.get(0);
-            }
-
-            if (firstWrap.size() > 1) {
-                int[] firstLineCharCount = {0};
-                firstWrap.get(0).accept((index, style, codePoint) -> {
-                    firstLineCharCount[0]++;
-                    return true;
-                });
-                int skipChars = firstLineCharCount[0];
-
-                // Skip whitespace between first line and remainder
-                String fullStr = messageText.getString();
-                while (skipChars < fullStr.length() && fullStr.charAt(skipChars) == ' ') {
-                    skipChars++;
-                }
-                int finalSkipChars = skipChars;
-
-                MutableText styledRemainder = Text.empty().copy();
-                int[] idx = {0};
-                messageText.asOrderedText().accept((index, style, codePoint) -> {
-                    if (idx[0] >= finalSkipChars) {
-                        styledRemainder.append(Text.literal(new String(Character.toChars(codePoint))).setStyle(style));
-                    }
-                    idx[0]++;
-                    return true;
-                });
-                subsequentLines.addAll(textRenderer.wrapLines(styledRemainder, wrapWidthUnscaled));
+            if (split.remainder != null && !split.remainder.getString().isEmpty()) {
+                subsequentLines.addAll(textRenderer.wrapLines(split.remainder, wrapWidthUnscaled));
             }
 
             int totalLines = 1 + subsequentLines.size();
@@ -199,7 +188,7 @@ public class DialogueHistoryScreen extends Screen {
                 if (w > maxLineW) maxLineW = w;
             }
 
-            bakedEntries.add(new BakedEntry(entry, nameLine, nameWidthUnscaled, firstMsgLine, subsequentLines, entryHeightGui, maxLineW));
+            bakedEntries.add(new BakedEntry(entry, nameLine, nameWidthUnscaled, firstMsgLine, null, subsequentLines, entryHeightGui, maxLineW));
             totalHeight += entryHeightGui;
         }
 
@@ -319,13 +308,15 @@ public class DialogueHistoryScreen extends Screen {
                     int textHeightGui = totalLines * scaledLineSpacing;
                     int innerHeightGui = Math.max(headSizeScaled, textHeightGui);
                     int textStartY = y + boxPaddingScaled + ((innerHeightGui - textHeightGui) / 2);
-                    // Nudge text down slightly to visually center (MC fonts have high ascent)
+                    // Compensate for rounding differences between ideal scaled spacing and integer scaledLineSpacing
+                    float idealScaledSpacing = unscaledLineSpacing * currentTextScale;
+                    float spacingDiff = (float) scaledLineSpacing - idealScaledSpacing;
+                    int roundingCompensation = Math.round(spacingDiff / 2.0f);
+                    textStartY += roundingCompensation;
+                    // Small downward nudge to visually center (match DialogueRenderer)
                     textStartY += 2;
 
                     var matricesLocal = drawContext.getMatrices();
-                    float m00 = matricesLocal.m00(), m01 = matricesLocal.m01();
-                    float m10 = matricesLocal.m10(), m11 = matricesLocal.m11();
-                    float m20 = matricesLocal.m20(), m21 = matricesLocal.m21();
                     matricesLocal.scale(currentTextScale, currentTextScale);
 
                     int drawX = Math.max(0, Math.round(textX / Math.max(0.001f, currentTextScale)));
@@ -334,13 +325,30 @@ public class DialogueHistoryScreen extends Screen {
 
                     int textColor = applyAlphaToColor(0xFFFFFFFF, eased);
 
-                    // Draw name on line 0
-                    drawContext.drawText(textRenderer, baked.nameLine, drawX, currentY, textColor, false);
+                    // Draw name on line 0 (fallback to building prefix if baked entry is malformed)
+                    if (baked.fullFirstLine != null) {
+                        // Draw the whole first line (including name) as one ordered text to avoid splitting issues
+                        drawContext.drawText(textRenderer, baked.fullFirstLine, drawX, currentY, textColor, false);
+                    } else {
+                        OrderedText nameToDraw = baked.nameLine;
+                        int nameWidth = baked.nameWidthUnscaled;
+                        if (nameToDraw == null || nameWidth <= 0) {
+                            try {
+                                MutableText rebuilt = DialoguePacketHandler.buildNamePrefix(baked.source.getName(), baked.source.getNameColor());
+                                nameToDraw = rebuilt.asOrderedText();
+                                nameWidth = textRenderer.getWidth(nameToDraw);
+                            } catch (Throwable ignored) {
+                                nameToDraw = Text.literal(baked.source.getName() == null ? "" : baked.source.getName()).asOrderedText();
+                                nameWidth = textRenderer.getWidth(nameToDraw);
+                            }
+                        }
+                        drawContext.drawText(textRenderer, nameToDraw, drawX, currentY, textColor, false);
 
-                    // Draw first message part right after name on line 0
-                    if (baked.firstMsgLine != null) {
-                        int msgDrawX = drawX + baked.nameWidthUnscaled;
-                        drawContext.drawText(textRenderer, baked.firstMsgLine, msgDrawX, currentY, textColor, false);
+                        // Draw first message part right after name on line 0
+                        if (baked.firstMsgLine != null) {
+                            int msgDrawX = drawX + nameWidth;
+                            drawContext.drawText(textRenderer, baked.firstMsgLine, msgDrawX, currentY, textColor, false);
+                        }
                     }
                     currentY += unscaledLineSpacingDraw;
 
@@ -350,10 +358,10 @@ public class DialogueHistoryScreen extends Screen {
                         currentY += unscaledLineSpacingDraw;
                     }
 
-                    matricesLocal.set(m00, m01, m10, m11, m20, m21);
-                }
-                y += baked.entryHeight + ENTRY_GAP;
-            }
+                    matricesLocal.scale(1.0f / Math.max(0.001f, currentTextScale), 1.0f / Math.max(0.001f, currentTextScale));
+                 }
+                 y += baked.entryHeight + ENTRY_GAP;
+             }
 
             drawContext.disableScissor();
 
@@ -383,12 +391,12 @@ public class DialogueHistoryScreen extends Screen {
                     cachedTexW = img.getWidth();
                     cachedTexH = img.getHeight();
                     img.close();
-                    System.out.println("[ptdialogue] Background texture size: " + cachedTexW + "x" + cachedTexH);
-                }
-            }
-        } catch (Exception e) {
-            System.err.println("[ptdialogue] Failed to read bg texture size: " + e.getMessage());
-        }
+                    // background texture size read (debug output removed)
+                 }
+             }
+         } catch (Exception e) {
+            // failed to read background texture size (debug output removed)
+         }
         if (cachedTexW <= 0) { cachedTexW = 64; cachedTexH = 64; }
     }
 
