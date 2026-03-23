@@ -87,13 +87,41 @@ public class DialogueCommand {
 
         for (PlayerEntity player : targets) {
             if (player instanceof ServerPlayerEntity serverPlayer) {
-                // Отправляем диалог клиенту
-                ServerPlayNetworking.send(serverPlayer, new DialoguePayload(icon, name, colorname, message));
-                // Сохраняем в серверную историю
+                // Normalize icon (strip surrounding quotes) but do NOT expand @s here.
+                String iconToSend = icon;
+                if (iconToSend != null) {
+                    iconToSend = iconToSend.trim();
+                    if (iconToSend.length() >= 2 && iconToSend.startsWith("\"") && iconToSend.endsWith("\"")) {
+                        iconToSend = iconToSend.substring(1, iconToSend.length() - 1);
+                    }
+                }
+
+                // Determine skin UUID to send when icon == @s
+                String skinUuid = null;
+                if ("@s".equals(iconToSend)) {
+                    try { skinUuid = serverPlayer.getUuid().toString(); } catch (Throwable ignored) { skinUuid = null; }
+                }
+
+                // If icon is @s and the server has a cached head PNG for this player, send it first
+                if ("@s".equals(iconToSend)) {
+                    try {
+                        String targetKey = serverPlayer.getGameProfile().name().toLowerCase();
+                        if (IconSyncManager.hasHead(targetKey)) {
+                            IconSyncManager.sendHeadToPlayer(targetKey, serverPlayer);
+                        } else {
+                            // Trigger background caching (non-blocking)
+                            IconSyncManager.ensureHeadCached(serverPlayer.getGameProfile().name(), context.getSource().getServer());
+                        }
+                    } catch (Throwable ignored) {}
+                }
+
+                // Send raw icon (may be "@s") and optional skinUuid
+                ServerPlayNetworking.send(serverPlayer, new DialoguePayload(iconToSend, name, colorname, message, skinUuid));
+                // Save raw icon into history; include skinUuid so clients can request exact skin
                 HistoryManager.record(serverPlayer, context.getSource().getServer(),
-                        icon, name, parseColor(colorname), message);
-            }
-        }
+                        iconToSend, name, parseColor(colorname), message, skinUuid);
+             }
+         }
 
         context.getSource().sendFeedback(
             () -> Text.translatable("ptdialogue.command.dialogue.sent", targets.size()),

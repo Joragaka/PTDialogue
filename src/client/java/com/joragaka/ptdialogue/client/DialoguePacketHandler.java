@@ -34,18 +34,60 @@ public class DialoguePacketHandler {
     public static void register() {
         // Получение диалога — показываем на экране (история хранится на сервере)
         ClientPlayNetworking.registerGlobalReceiver(DialoguePayload.ID, (payload, context) -> {
-            String icon = payload.icon();
-            String name = payload.name();
-            String colorname = payload.colorname();
-            String message = payload.message();
+            final String icon = normalizeIcon(payload.icon());
+            final String name = payload.name();
+            final String colorname = payload.colorname();
+            final String message = payload.message();
+            final String skinUuid = payload.skinUuid();
 
-            SkinCache.preload(icon);
-
+            // Defer preload to client thread so we can resolve @s -> local player name safely
             context.client().execute(() -> {
+                // Preload skin: if icon is "@s", preload local player's skin; otherwise preload the icon directly
+                try {
+                    if ("@s".equals(icon)) {
+                        // Prefer server-provided skinUuid if available
+                        if (skinUuid != null && !skinUuid.isEmpty()) {
+                            SkinCache.preload(skinUuid);
+                        } else {
+                            var mc = context.client();
+                            if (mc.player != null && mc.player.getGameProfile() != null) {
+                                String local = null;
+                                try { local = mc.player.getGameProfile().name(); } catch (Throwable t) { local = mc.player.getName().getString(); }
+                                if (local != null) SkinCache.preload(local);
+                            }
+                        }
+                    } else {
+                        SkinCache.preload(icon);
+                    }
+                } catch (Throwable ignored) {}
+
                 int nameColor = parseColor(colorname);
                 Text messageText = parseJsonToText(message);
                 if (messageText != null) {
                     DialogueManager.showDialogue(icon, name, nameColor, messageText);
+                    // If icon is @s, ensure local player's head texture is available; if not, request it and re-show when ready
+                    if ("@s".equals(icon)) {
+                        try {
+                            var mc = context.client();
+                            // prefer server-provided UUID if present
+                            String uuidToUse = (skinUuid != null && !skinUuid.isEmpty()) ? skinUuid : null;
+                            if (uuidToUse == null && mc.player != null) {
+                                try { uuidToUse = mc.player.getGameProfile().name(); } catch (Throwable t) { uuidToUse = mc.player.getName().getString(); }
+                            }
+                            if (uuidToUse != null) {
+                                final String fUuid = uuidToUse;
+                                final String fIcon = icon;
+                                final String fName = name;
+                                final int fColor = nameColor;
+                                final Text fMsg = messageText;
+                                SkinCache.ensureHeadTexture(fUuid, new java.util.function.Consumer<net.minecraft.util.Identifier>() {
+                                    @Override public void accept(net.minecraft.util.Identifier id) {
+                                        try { mc.execute(() -> DialogueManager.showDialogue(fIcon, fName, fColor, fMsg)); } catch (Throwable ignored) {}
+                                    }
+                                });
+                            }
+                        } catch (Throwable ignored) {}
+                    }
                 }
             });
         });
@@ -55,11 +97,46 @@ public class DialoguePacketHandler {
             context.client().execute(() -> {
                 if (payload.fullSync()) {
                     // Полная синхронизация при входе — заменяем историю
+                    // Preload skins for entries (resolve @s to local player on client)
+                    try {
+                        var mc = context.client();
+                        for (var e : payload.entries()) {
+                            String raw = e.icon();
+                            String norm = normalizeIcon(raw);
+                            String entryUuid = e.skinUuid();
+                            if ("@s".equals(norm)) {
+                                if (entryUuid != null && !entryUuid.isEmpty()) {
+                                    SkinCache.preload(entryUuid);
+                                } else if (mc.player != null) {
+                                    String local = null;
+                                    try { local = mc.player.getGameProfile().name(); } catch (Throwable t) { local = mc.player.getName().getString(); }
+                                    if (local != null) SkinCache.preload(local);
+                                }
+                            } else {
+                                SkinCache.preload(norm);
+                            }
+                        }
+                    } catch (Throwable ignored) {}
                     DialogueHistory.loadFromServer(payload.entries());
                 } else if (!payload.entries().isEmpty()) {
-                    // Инкрементальная — добавляем одну запись
+                    // Инкрементальная — добавляем одна запись
                     var e = payload.entries().get(0);
-                    DialogueHistory.appendFromServer(e.icon(), e.name(), e.color(),
+                    String iconNorm = normalizeIcon(e.icon());
+                    String entryUuid = e.skinUuid();
+                    try {
+                        var mc = context.client();
+                        if ("@s".equals(iconNorm)) {
+                            if (entryUuid != null && !entryUuid.isEmpty()) SkinCache.preload(entryUuid);
+                            else if (mc.player != null) {
+                                String local = null;
+                                try { local = mc.player.getGameProfile().name(); } catch (Throwable t) { local = mc.player.getName().getString(); }
+                                if (local != null) SkinCache.preload(local);
+                            }
+                        } else {
+                            SkinCache.preload(iconNorm);
+                        }
+                    } catch (Throwable ignored) {}
+                    DialogueHistory.appendFromServer(iconNorm, e.name(), e.color(),
                             parseJsonToText(e.message()), e.timestamp());
                 }
             });
@@ -284,6 +361,19 @@ public class DialoguePacketHandler {
         }
 
         return NAMED_COLORS.getOrDefault(colorName == null ? "" : colorName.toLowerCase(), 0xFFFFFF);
+    }
+
+    /**
+     * Normalize icon string: strip surrounding double quotes if present and trim.
+     * Allows using @s without needing explicit quotes.
+     */
+    private static String normalizeIcon(String raw) {
+        if (raw == null) return null;
+        String t = raw.trim();
+        if (t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"")) {
+            t = t.substring(1, t.length() - 1);
+        }
+        return t;
     }
 
 }

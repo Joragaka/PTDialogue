@@ -274,10 +274,15 @@ public class DialogueRenderer {
             }
         }
 
-        // Try to draw directly from the local player entity's SkinTextures if this is the local player's icon
+        // Try to draw directly from the local player's SkinCache first (ensure overlay/hat present)
         if (isLocalPlayerIcon) {
-            // Prefer PlayerListEntry for local player (may contain SkinTextures). Do not call entity methods that
-            // are mapping-dependent.
+            // Prefer cached composited head (SkinCache) first so hat/overlay always matches
+            Identifier localHead = SkinCache.getHeadTextureId(resolvedIcon);
+            if (localHead != null) {
+                drawCustomTexture(drawContext, localHead, x, y, size, size, alpha);
+                return;
+            }
+            // fallback to playerlist skin textures
             if (client.getNetworkHandler() != null) {
                 PlayerListEntry localEntry = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
                 if (localEntry != null) {

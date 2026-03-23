@@ -20,7 +20,10 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.List;
+import java.util.ArrayList;
 
 /**
  * Fetches player skins via Mojang API, composites face+hat into a single
@@ -32,6 +35,8 @@ public class SkinCache {
     private static final Map<String, Long> cacheTimestamps = new ConcurrentHashMap<>();
     private static final Map<String, String> cachedSkinUrls = new ConcurrentHashMap<>();
     private static final Map<String, String> uuidCache = new ConcurrentHashMap<>();
+    // reverse lookup: uuid -> latest known username
+    private static final Map<String, String> uuidToName = new ConcurrentHashMap<>();
     private static final Set<String> loadingSet = Collections.newSetFromMap(new ConcurrentHashMap<>());
     // Track recent failures to avoid repeated attempts/log spam when skins can't be loaded
     private static final Map<String, Long> failureTimestamps = new ConcurrentHashMap<>();
@@ -51,6 +56,8 @@ public class SkinCache {
 
     // Lazily resolved config dir
     private static volatile Path cacheDir;
+    // Listeners waiting for a head texture to be available for a given player key
+    private static final Map<String, List<Consumer<Identifier>>> headListeners = new ConcurrentHashMap<>();
 
     // ──────────────────────────── public API ────────────────────────────
 
@@ -73,6 +80,35 @@ public class SkinCache {
             loadHeadFromDiskCache(key);
         }
 
+        if (loadingSet.add(key)) {
+            fetchSkinAsync(key, playerName);
+        }
+    }
+
+    /**
+     * Ensure head texture exists (async). If already present, callback is invoked synchronously on caller thread.
+     * Otherwise the callback will be invoked on the client thread once the head texture is registered.
+     */
+    public static void ensureHeadTexture(String playerName, java.util.function.Consumer<Identifier> callback) {
+        if (playerName == null) {
+            if (callback != null) callback.accept(null);
+            return;
+        }
+        String key = playerName.toLowerCase();
+        Identifier existing = headTextureCache.get(key);
+        if (existing != null) {
+            if (callback != null) callback.accept(existing);
+            return;
+        }
+
+        // Add listener
+        headListeners.compute(key, (k, list) -> {
+            if (list == null) list = new ArrayList<>();
+            if (callback != null) list.add(callback);
+            return list;
+        });
+
+        // Trigger fetch (if not already loading)
         if (loadingSet.add(key)) {
             fetchSkinAsync(key, playerName);
         }
@@ -283,6 +319,23 @@ public class SkinCache {
                 headTextureCache.put(key, textureId);
                 // successful registration -> clear failure mark
                 failureTimestamps.remove(key);
+                // If we know a username for this uuid, also map username -> same texture id
+                try {
+                    String knownName = uuidToName.get(key);
+                    if (knownName != null && !knownName.isEmpty()) {
+                        headTextureCache.put(knownName.toLowerCase(), textureId);
+                        cacheTimestamps.put(knownName.toLowerCase(), System.currentTimeMillis());
+                    }
+                } catch (Throwable ignored) {}
+                // Debug: one-time notice that head texture was registered
+                try { System.out.println("[ptdialogue-skincache] registered head for '" + key + "' -> " + textureId.toString()); } catch (Throwable ignored) {}
+                // Notify listeners waiting for this head
+                List<Consumer<Identifier>> listeners = headListeners.remove(key);
+                if (listeners != null) {
+                    for (var c : listeners) {
+                        try { c.accept(textureId); } catch (Throwable ignored) {}
+                    }
+                }
             } catch (Exception e) {
                 // register failed -> mark failure so we won't spam retries
                 failureTimestamps.put(key, System.currentTimeMillis());
@@ -306,17 +359,24 @@ public class SkinCache {
         if (cachedUuid != null) {
             uuidFuture = CompletableFuture.completedFuture(cachedUuid);
         } else {
-            uuidFuture = HTTP_CLIENT.sendAsync(
-                    HttpRequest.newBuilder()
-                            .uri(URI.create("https://api.mojang.com/users/profiles/minecraft/" + playerName))
-                            .timeout(REQUEST_TIMEOUT).GET().build(),
-                    HttpResponse.BodyHandlers.ofString()
-            ).thenApply(resp -> {
-                if (resp.statusCode() != 200) return null;
-                String uuid = JsonParser.parseString(resp.body()).getAsJsonObject().get("id").getAsString();
-                uuidCache.put(key, uuid);
-                return uuid;
-            });
+            // If playerName looks like a UUID (contains '-' or is 32 hex chars), use it directly and skip name->uuid lookup
+            String maybe = playerName == null ? "" : playerName.trim();
+            boolean looksLikeUuid = maybe.contains("-") || maybe.length() == 32;
+            if (looksLikeUuid) {
+                uuidFuture = CompletableFuture.completedFuture(maybe);
+            } else {
+                uuidFuture = HTTP_CLIENT.sendAsync(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create("https://api.mojang.com/users/profiles/minecraft/" + playerName))
+                                .timeout(REQUEST_TIMEOUT).GET().build(),
+                        HttpResponse.BodyHandlers.ofString()
+                ).thenApply(resp -> {
+                    if (resp.statusCode() != 200) return null;
+                    String uuid = JsonParser.parseString(resp.body()).getAsJsonObject().get("id").getAsString();
+                    uuidCache.put(key, uuid);
+                    return uuid;
+                });
+            }
         }
 
         uuidFuture
@@ -327,7 +387,18 @@ public class SkinCache {
                             .uri(URI.create("https://sessionserver.mojang.com/session/minecraft/profile/" + uuid))
                             .timeout(REQUEST_TIMEOUT).GET().build(),
                     HttpResponse.BodyHandlers.ofString()
-            ).thenApply(resp -> resp.statusCode() == 200 ? extractSkinUrl(resp.body()) : null);
+            ).thenApply(resp -> {
+                if (resp.statusCode() != 200) return null;
+                try {
+                    // Store mapping uuid -> current username if available in profile
+                    var json = JsonParser.parseString(resp.body()).getAsJsonObject();
+                    if (json.has("name")) {
+                        String name = json.get("name").getAsString();
+                        uuidToName.put(uuid.toLowerCase(), name);
+                    }
+                } catch (Exception ignored) {}
+                return extractSkinUrl(resp.body());
+            });
         })
         .thenCompose(skinUrl -> {
             if (skinUrl == null) return CompletableFuture.completedFuture((byte[]) null);
@@ -365,6 +436,23 @@ public class SkinCache {
                         headTextureCache.put(key, headId);
                         cacheTimestamps.put(key, System.currentTimeMillis());
                         failureTimestamps.remove(key);
+                        // If we know a username for this uuid, also map username -> same texture id
+                        try {
+                            String knownName = uuidToName.get(key);
+                            if (knownName != null && !knownName.isEmpty()) {
+                                headTextureCache.put(knownName.toLowerCase(), headId);
+                                cacheTimestamps.put(knownName.toLowerCase(), System.currentTimeMillis());
+                            }
+                        } catch (Throwable ignored) {}
+                        // Debug: one-time notice that head texture was registered
+                        try { System.out.println("[ptdialogue-skincache] registered head for '" + key + "' -> " + headId.toString()); } catch (Throwable ignored) {}
+                        // Notify listeners waiting for this head
+                        List<Consumer<Identifier>> listeners = headListeners.remove(key);
+                        if (listeners != null) {
+                            for (var c : listeners) {
+                                try { c.accept(headId); } catch (Throwable ignored) {}
+                            }
+                        }
                     } catch (Exception e) {
                         failureTimestamps.put(key, System.currentTimeMillis());
                     }

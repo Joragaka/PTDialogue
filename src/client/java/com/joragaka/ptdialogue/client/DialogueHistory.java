@@ -49,7 +49,14 @@ public class DialogueHistory {
         for (var e : entries) {
             // messages on disk are stored as JSON component arrays/objects. Parse them to Text.
             Text parsed = com.joragaka.ptdialogue.client.DialoguePacketHandler.parseJsonToText(e.message());
-            history.add(new Entry(e.icon(), e.name(), e.color(), parsed, e.timestamp()));
+            String icon = e.icon();
+            if (icon != null) {
+                icon = icon.trim();
+                if (icon.length() >= 2 && icon.startsWith("\"") && icon.endsWith("\"")) {
+                    icon = icon.substring(1, icon.length() - 1);
+                }
+            }
+            history.add(new Entry(icon, e.name(), e.color(), parsed, e.timestamp()));
         }
         version++;
         System.out.println("[ptdialogue] Loaded " + history.size() + " history entries from server");

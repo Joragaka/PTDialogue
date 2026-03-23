@@ -16,7 +16,8 @@ public record HistorySyncPayload(List<Entry> entries, boolean fullSync) implemen
     public static final CustomPayload.Id<HistorySyncPayload> ID =
             new CustomPayload.Id<>(Identifier.of("ptdialogue", "history_sync"));
 
-    public record Entry(String icon, String name, int color, String message, long timestamp) {}
+    // Add optional skinUuid to history entries so clients can use exact skin reference
+    public record Entry(String icon, String name, int color, String message, long timestamp, String skinUuid) {}
 
     public static final PacketCodec<PacketByteBuf, HistorySyncPayload> CODEC = PacketCodec.of(
         (payload, buf) -> {
@@ -28,6 +29,7 @@ public record HistorySyncPayload(List<Entry> entries, boolean fullSync) implemen
                 buf.writeInt(e.color());
                 buf.writeString(e.message());
                 buf.writeLong(e.timestamp());
+                buf.writeString(e.skinUuid() == null ? "" : e.skinUuid());
             }
         },
         buf -> {
@@ -40,7 +42,9 @@ public record HistorySyncPayload(List<Entry> entries, boolean fullSync) implemen
                 int    color = buf.readInt();
                 String msg   = buf.readString();
                 long   ts    = buf.readLong();
-                list.add(new Entry(icon, name, color, msg, ts));
+                String skinUuid = buf.readString();
+                if (skinUuid.isEmpty()) skinUuid = null;
+                list.add(new Entry(icon, name, color, msg, ts, skinUuid));
             }
             return new HistorySyncPayload(list, fullSync);
         }
@@ -51,4 +55,3 @@ public record HistorySyncPayload(List<Entry> entries, boolean fullSync) implemen
         return ID;
     }
 }
-

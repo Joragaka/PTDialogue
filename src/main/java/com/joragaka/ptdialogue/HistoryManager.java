@@ -48,10 +48,10 @@ public class HistoryManager {
      * Called from DialogueCommand when /dialogue is executed.
      */
     public static void record(ServerPlayerEntity player, MinecraftServer server,
-                               String icon, String name, int color, String message) {
+                               String icon, String name, int color, String message, String skinUuid) {
         String playerName = player.getGameProfile().name();
         long ts = System.currentTimeMillis();
-        HistorySyncPayload.Entry entry = new HistorySyncPayload.Entry(icon, name, color, message, ts);
+        HistorySyncPayload.Entry entry = new HistorySyncPayload.Entry(icon, name, color, message, ts, skinUuid);
 
         // Add to in-memory cache
         List<HistorySyncPayload.Entry> entries = cache.computeIfAbsent(
@@ -116,7 +116,8 @@ public class HistoryManager {
                         int    color = o.has("color")   ? o.get("color").getAsInt()      : 0xFFFFFF;
                         String msg   = o.has("message") ? o.get("message").getAsString() : "";
                         long   ts    = o.has("ts")      ? o.get("ts").getAsLong()        : 0L;
-                        list.add(new HistorySyncPayload.Entry(icon, name, color, msg, ts));
+                        String skinUuid = o.has("skinUuid") ? o.get("skinUuid").getAsString() : null;
+                        list.add(new HistorySyncPayload.Entry(icon, name, color, msg, ts, skinUuid));
                     } catch (Exception ignored) {}
                 }
                 return list;
@@ -160,7 +161,8 @@ public class HistoryManager {
                                 int    color = o.has("color")   ? o.get("color").getAsInt()      : 0xFFFFFF;
                                 String msg   = o.has("message") ? o.get("message").getAsString() : "";
                                 long   ts    = o.has("ts")      ? o.get("ts").getAsLong()        : 0L;
-                                list.add(new HistorySyncPayload.Entry(icon, name, color, msg, ts));
+                                String skinUuid = o.has("skinUuid") ? o.get("skinUuid").getAsString() : null;
+                                list.add(new HistorySyncPayload.Entry(icon, name, color, msg, ts, skinUuid));
                             } catch (Exception ignored) {}
                         }
 
@@ -206,6 +208,10 @@ public class HistoryManager {
                 o.addProperty("color",   e.color());
                 o.addProperty("message", e.message());
                 o.addProperty("ts",      e.timestamp());
+                // If entry contains skinUuid include it in persisted JSON
+                if (e instanceof HistorySyncPayload.Entry he) {
+                    try { if (he.skinUuid() != null) o.addProperty("skinUuid", he.skinUuid()); } catch (Throwable ignored) {}
+                }
                 arr.add(o);
             }
             // write atomically via temp file and move

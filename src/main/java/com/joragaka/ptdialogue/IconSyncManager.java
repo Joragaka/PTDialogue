@@ -392,6 +392,38 @@ public class IconSyncManager {
         }
     }
 
+    // Check whether a cached head exists for the given key (lowercased name or uuid)
+    public static boolean hasHead(String key) {
+        try {
+            Path headFile = getHeadsDir().resolve(key.toLowerCase() + ".png");
+            return Files.exists(headFile) && Files.isRegularFile(headFile);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Send a single cached head to a specific player (if present)
+    public static void sendHeadToPlayer(String key, ServerPlayerEntity player) {
+        try {
+            Path headFile = getHeadsDir().resolve(key.toLowerCase() + ".png");
+            if (!Files.exists(headFile) || !Files.isRegularFile(headFile)) return;
+            byte[] data = Files.readAllBytes(headFile);
+            String md5 = computeMd5(data);
+            IconSyncPayload payload = new IconSyncPayload(".heads/" + key.toLowerCase() + ".png", data, md5);
+            ServerPlayNetworking.send(player, payload);
+        } catch (Exception e) {
+            System.err.println("[PTDialogue] Failed to send head to player: " + e.getMessage());
+        }
+    }
+
+    // Public helper: ensure a player's head is cached (async fetch) — safe to call repeatedly.
+    public static void ensureHeadCached(String playerName, MinecraftServer server) {
+        if (playerName == null || playerName.isEmpty() || server == null) return;
+        String key = playerName.toLowerCase();
+        if (hasHead(key)) return;
+        // fetchAndCacheHead is async and will broadcast when done
+        fetchAndCacheHead(playerName, server);
+    }
     // ─────────────────── Head compositing ───────────────────
     // Server sends raw skin PNG — client handles compositing.
     // This avoids AWT dependency on server (java.desktop module may be missing).

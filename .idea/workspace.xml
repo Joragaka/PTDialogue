@@ -4,11 +4,18 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="log spam fix">
+    <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="@s icon image modifier, + optimisation fixes">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialoguePacketHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialoguePacketHandler.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialoguePayload.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialoguePayload.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistorySyncPayload.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistorySyncPayload.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -83,7 +90,7 @@
       <recent name="D:\MPROJECTS\PtLoreThing\src\client\resources\assets\ptlorething\textures\gui" />
     </key>
   </component>
-  <component name="RunManager" selected="Gradle.ptlorething [runClient]">
+  <component name="RunManager" selected="Gradle.ptlorething [build]">
     <configuration name="ptlorething [build]" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
       <ExternalSystemSettings>
         <option name="executionName" />
@@ -141,8 +148,8 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Gradle.ptlorething [runClient]" />
         <item itemvalue="Gradle.ptlorething [build]" />
+        <item itemvalue="Gradle.ptlorething [runClient]" />
       </list>
     </recent_temporary>
   </component>
@@ -210,7 +217,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774272141528</updated>
     </task>
-    <option name="localTasksCounter" value="8" />
+    <task id="LOCAL-00008" summary="@s icon image modifier, + optimisation fixes">
+      <option name="closed" value="true" />
+      <created>1774274231213</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1774274231213</updated>
+    </task>
+    <option name="localTasksCounter" value="9" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -218,6 +233,7 @@
     <MESSAGE value="Alt fonts via resourcepack, + raw json compability for names" />
     <MESSAGE value="bug fixes" />
     <MESSAGE value="log spam fix" />
-    <option name="LAST_COMMIT_MESSAGE" value="log spam fix" />
+    <MESSAGE value="@s icon image modifier, + optimisation fixes" />
+    <option name="LAST_COMMIT_MESSAGE" value="@s icon image modifier, + optimisation fixes" />
   </component>
 </project>

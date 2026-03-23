@@ -31,6 +31,9 @@ public class DialogueHistoryScreen extends Screen {
     private static final int HORIZONTAL_PADDING = 20;
     private static final int ENTRY_GAP = 6;
 
+    // One-time debug set to avoid spamming which source provided the head for a given name
+    private static final java.util.Set<String> debugLoggedNames = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+
     private double scrollOffset = 0;
     private int totalContentHeight = 0;
     private final List<BakedEntry> bakedEntries = new ArrayList<>();
@@ -465,8 +468,6 @@ public class DialogueHistoryScreen extends Screen {
         }
     }
 
-
-
     // modified: accept alpha and pass color through
     private void drawEntryHead(DrawContext drawContext, String icon, int x, int y, int size, float alpha) {
         MinecraftClient mc = MinecraftClient.getInstance();
@@ -475,17 +476,20 @@ public class DialogueHistoryScreen extends Screen {
         String resolvedIcon = icon;
         if ("@s".equals(icon)) {
             if (mc.player != null && mc.player.getGameProfile() != null) {
-                // Use raw profile name (unformatted) so we resolve exact username
                 try { resolvedIcon = mc.player.getGameProfile().name(); } catch (Throwable t) { resolvedIcon = mc.player.getName().getString(); }
             } else {
                 resolvedIcon = null;
             }
         }
 
+        // Custom icons (file-based) take priority
         if (CustomIconCache.isCustomIcon(icon)) {
             Identifier customTex = CustomIconCache.getIconTextureId(icon);
             if (customTex != null) {
                 drawTex(drawContext, customTex, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
+                if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
+                    try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=CUSTOM"); } catch (Throwable ignored) {}
+                }
                 return;
             }
             drawTex(drawContext, MissingTextureHelper.getTextureId(), x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
@@ -493,14 +497,20 @@ public class DialogueHistoryScreen extends Screen {
         }
 
         // Prefer resolvedIcon (e.g. when icon == "@s") for skin lookup
-        // If this icon references the local player, prefer the local player's SkinTextures first
         boolean isLocalPlayerIcon = false;
         if (mc.player != null && resolvedIcon != null) {
             try { isLocalPlayerIcon = resolvedIcon.equals(mc.player.getGameProfile().name()); } catch (Throwable ignored) {}
         }
 
         if (isLocalPlayerIcon) {
-            // Prefer PlayerListEntry for local player (may contain SkinTextures). Avoid calling entity methods not present in mappings.
+            Identifier localHead = SkinCache.getHeadTextureId(resolvedIcon);
+            if (localHead != null) {
+                drawTex(drawContext, localHead, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
+                if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
+                    try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=SKINCACHE (local)"); } catch (Throwable ignored) {}
+                }
+                return;
+            }
             if (mc.getNetworkHandler() != null) {
                 PlayerListEntry le = mc.getNetworkHandler().getPlayerListEntry(resolvedIcon);
                 if (le != null) {
@@ -508,6 +518,9 @@ public class DialogueHistoryScreen extends Screen {
                     if (st != null) {
                         int colorArgb = applyAlphaToColor(0xFFFFFFFF, alpha);
                         PlayerSkinDrawer.draw(drawContext, st, x, y, size, colorArgb);
+                        if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
+                            try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=PLAYERLIST (local)"); } catch (Throwable ignored) {}
+                        }
                         return;
                     }
                 }
@@ -519,6 +532,9 @@ public class DialogueHistoryScreen extends Screen {
         if (resolvedIcon != null) headId = SkinCache.getHeadTextureId(resolvedIcon);
         if (headId != null) {
             drawTex(drawContext, headId, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
+            if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
+                try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=SKINCACHE"); } catch (Throwable ignored) {}
+            }
             return;
         }
 
@@ -531,48 +547,49 @@ public class DialogueHistoryScreen extends Screen {
                 if (skinTextures != null) {
                     int colorArgb = applyAlphaToColor(0xFFFFFFFF, alpha);
                     PlayerSkinDrawer.draw(drawContext, skinTextures, x, y, size, colorArgb);
+                    if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
+                        try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=PLAYERLIST"); } catch (Throwable ignored) {}
+                    }
                     return;
                 }
             }
         }
 
+        if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
+            try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=MISSING"); } catch (Throwable ignored) {}
+        }
         drawTex(drawContext, MissingTextureHelper.getTextureId(), x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
     }
 
-    // modified to accept color arg
     private void drawTex(DrawContext drawContext, Identifier texture, int x, int y, int size, int colorArgb) {
-        try {
-            var pipeline = RenderPipelines.GUI_TEXTURED;
-            drawContext.drawTexture(pipeline, texture, x, y, 0.0f, 0.0f, size, size, size, size, colorArgb);
-        } catch (Exception ignored) {
-        }
+         try {
+             var pipeline = RenderPipelines.GUI_TEXTURED;
+             drawContext.drawTexture(pipeline, texture, x, y, 0.0f, 0.0f, size, size, size, size, colorArgb);
+         } catch (Exception ignored) {
+         }
+     }
+
+    // Apply an alpha multiplier [0..1] to a 32-bit ARGB color
+    private int applyAlphaToColor(int argbColor, float alpha) {
+        int baseA = (argbColor >>> 24) & 0xFF;
+        int baseRgb = argbColor & 0xFFFFFF;
+        int a = Math.max(0, Math.min(255, Math.round(baseA * Math.max(0f, Math.min(1f, alpha)))));
+        return (a << 24) | baseRgb;
     }
 
+    // Lightweight scrollbar drawing (keeps it invisible by default but present for hit testing if needed)
     private void drawScrollbar(DrawContext drawContext, int x, int y, int barWidth, int areaHeight) {
-        // Intentionally do not draw a visible scrollbar — keep mouse-wheel scrolling working.
-        // The scrolling logic (mouseScrolled / scrollOffset) remains unchanged.
-        return;
-    }
-
-    // helper to mix alpha into existing ARGB color
-    private int applyAlphaToColor(int baseColor, float alpha) {
-        int rgb = baseColor & 0x00FFFFFF;
-        int a = (int) Math.round((baseColor >>> 24 & 0xFF) * alpha);
-        a = Math.max(0, Math.min(255, a));
-        return (a << 24) | rgb;
-    }
-
-    @Override
-    public boolean shouldPause() {
-        return false;
-    }
-
-    @Override
-    public void close() {
-        // start closing animation instead of immediately removing the screen
-        if (this.client == null) return;
-        if (animClosing) return; // already closing
-        animClosing = true;
-        animStartTimeNs = System.nanoTime();
+        try {
+            // Draw a very subtle background track
+            drawContext.fill(x, y, x + barWidth, y + areaHeight, 0x22000000);
+            // Draw thumb proportional to content
+            int visibleHeight = areaHeight;
+            int contentHeight = Math.max(1, totalContentHeight);
+            double ratio = Math.min(1.0, (double) visibleHeight / (double) contentHeight);
+            int thumbH = Math.max(4, (int) Math.round(visibleHeight * ratio));
+            double scrollRatio = totalContentHeight <= visibleHeight ? 0.0 : (scrollOffset / Math.max(1.0, totalContentHeight - visibleHeight));
+            int thumbY = y + (int) Math.round((visibleHeight - thumbH) * scrollRatio);
+            drawContext.fill(x + 1, thumbY, x + barWidth - 1, thumbY + thumbH, 0x44000000);
+        } catch (Throwable ignored) {}
     }
 }
