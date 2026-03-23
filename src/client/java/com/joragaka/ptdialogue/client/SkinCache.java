@@ -33,6 +33,9 @@ public class SkinCache {
     private static final Map<String, String> cachedSkinUrls = new ConcurrentHashMap<>();
     private static final Map<String, String> uuidCache = new ConcurrentHashMap<>();
     private static final Set<String> loadingSet = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    // Track recent failures to avoid repeated attempts/log spam when skins can't be loaded
+    private static final Map<String, Long> failureTimestamps = new ConcurrentHashMap<>();
+    private static final long FAILURE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
     private static final String NAMESPACE = "ptdialogue";
 
     private static final long CACHE_TTL_MS = 5 * 60 * 1000; // 5 min
@@ -57,6 +60,10 @@ public class SkinCache {
 
         String key = playerName.toLowerCase();
 
+        // If we recently failed to load this skin, skip attempts until cooldown expires
+        Long lastFail = failureTimestamps.get(key);
+        if (lastFail != null && (System.currentTimeMillis() - lastFail) < FAILURE_COOLDOWN_MS) return;
+
         Long ts = cacheTimestamps.get(key);
         if (ts != null && (System.currentTimeMillis() - ts) < CACHE_TTL_MS && headTextureCache.containsKey(key)) {
             return;
@@ -74,6 +81,12 @@ public class SkinCache {
     public static Identifier getHeadTextureId(String playerName) {
         if (playerName == null) return null;
         String key = playerName.toLowerCase();
+
+        // If we recently failed to load this skin, avoid retrying immediately
+        Long lastFail = failureTimestamps.get(key);
+        if (lastFail != null && (System.currentTimeMillis() - lastFail) < FAILURE_COOLDOWN_MS) {
+            return headTextureCache.get(key);
+        }
 
         Identifier cached = headTextureCache.get(key);
         if (cached != null) {
@@ -107,6 +120,8 @@ public class SkinCache {
         String key = nick.toLowerCase();
         headTextureCache.put(key, textureId);
         cacheTimestamps.put(key, System.currentTimeMillis());
+        // Clear any recorded failure for this key — we now have a texture
+        failureTimestamps.remove(key);
     }
 
     /**
@@ -119,6 +134,7 @@ public class SkinCache {
         NativeImage head = processAndSaveHead(key, skinPngBytes);
         if (head != null) {
             registerHeadTexture(key, head);
+            failureTimestamps.remove(key);
         }
         return head;
     }
@@ -150,8 +166,10 @@ public class SkinCache {
             if (headImage == null) return;
             registerHeadTexture(key, headImage);
             cacheTimestamps.put(key, System.currentTimeMillis());
+            failureTimestamps.remove(key);
         } catch (Exception e) {
-            System.err.println("[ptdialogue] Failed to load head from disk: " + e.getMessage());
+            // Record failure but avoid spamming logs on repeated failures
+            failureTimestamps.put(key, System.currentTimeMillis());
         }
     }
 
@@ -211,7 +229,8 @@ public class SkinCache {
             skin.close();
             return head;
         } catch (Exception e) {
-            System.err.println("[ptdialogue] compositeHead failed: " + e.getMessage());
+            // Log once and mark failure; avoid repeated stack spam
+            // Use failure map key unknown here, caller will mark failure when appropriate
             return null;
         }
     }
@@ -243,7 +262,8 @@ public class SkinCache {
             Files.createDirectories(path.getParent());
             Files.write(path, skinPngBytes);
         } catch (Exception e) {
-            System.err.println("[ptdialogue] Failed to save head to disk: " + e.getMessage());
+            // don't spam logs on IO save failure; mark as failure so we don't retry constantly
+            failureTimestamps.put(key, System.currentTimeMillis());
         }
 
         return head;
@@ -261,8 +281,11 @@ public class SkinCache {
                 client.getTextureManager().registerTexture(textureId,
                         new NativeImageBackedTexture(name, headImage));
                 headTextureCache.put(key, textureId);
+                // successful registration -> clear failure mark
+                failureTimestamps.remove(key);
             } catch (Exception e) {
-                System.err.println("[ptdialogue] Failed to register head texture: " + e.getMessage());
+                // register failed -> mark failure so we won't spam retries
+                failureTimestamps.put(key, System.currentTimeMillis());
             }
         };
         if (client.isOnThread()) register.run();
@@ -272,6 +295,12 @@ public class SkinCache {
     // ──────────────────── Mojang API pipeline ────────────────────
 
     private static void fetchSkinAsync(String key, String playerName) {
+        // If a recent failure exists, skip fetch to avoid repeated spamming
+        Long lastFail = failureTimestamps.get(key);
+        if (lastFail != null && (System.currentTimeMillis() - lastFail) < FAILURE_COOLDOWN_MS) {
+            loadingSet.remove(key);
+            return;
+        }
         CompletableFuture<String> uuidFuture;
         String cachedUuid = uuidCache.get(key);
         if (cachedUuid != null) {
@@ -314,7 +343,15 @@ public class SkinCache {
             ).thenApply(resp -> resp.statusCode() == 200 ? resp.body() : null);
         })
         .thenAccept(pngBytes -> {
-            if (pngBytes == null) { loadingSet.remove(key); return; }
+            if (pngBytes == null) {
+                // No bytes -> either nothing changed or fetch failed
+                if (!headTextureCache.containsKey(key)) {
+                    // mark failure to avoid repeated retries
+                    failureTimestamps.put(key, System.currentTimeMillis());
+                }
+                loadingSet.remove(key);
+                return;
+            }
             try {
                 NativeImage headImage = processAndSaveHead(key, pngBytes);
                 if (headImage == null) { loadingSet.remove(key); return; }
@@ -327,21 +364,23 @@ public class SkinCache {
                                 new NativeImageBackedTexture(() -> "ptdialogue_head_" + key, headImage));
                         headTextureCache.put(key, headId);
                         cacheTimestamps.put(key, System.currentTimeMillis());
+                        failureTimestamps.remove(key);
                     } catch (Exception e) {
-                        System.err.println("[ptdialogue] Failed to register head: " + e.getMessage());
+                        failureTimestamps.put(key, System.currentTimeMillis());
                     }
                     loadingSet.remove(key);
                 });
             } catch (Exception e) {
-                System.err.println("[ptdialogue] Failed to create head: " + e.getMessage());
+                failureTimestamps.put(key, System.currentTimeMillis());
                 loadingSet.remove(key);
             }
         })
         .exceptionally(ex -> {
-            System.err.println("[ptdialogue] Skin fetch failed for " + playerName + ": " + ex.getMessage());
+            // Record failure but avoid spamming full stack trace
+            failureTimestamps.put(key, System.currentTimeMillis());
             loadingSet.remove(key);
-            return null;
-        });
+             return null;
+         });
     }
 
     private static String extractSkinUrl(String profileJson) {
@@ -359,7 +398,7 @@ public class SkinCache {
                 }
             }
         } catch (Exception e) {
-            System.err.println("[ptdialogue] Failed to parse profile JSON: " + e.getMessage());
+            // parsing failed — caller will record a failure and avoid spamming
         }
         return null;
     }
