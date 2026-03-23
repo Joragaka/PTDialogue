@@ -37,6 +37,9 @@ public class DialogueHistory {
     }
 
     private static final List<Entry> history = new ArrayList<>();
+    // Simple monotonic version counter incremented whenever history changes.
+    // DialogueHistoryScreen will poll this to avoid expensive rebakes every frame.
+    private static volatile long version = 0L;
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -48,6 +51,7 @@ public class DialogueHistory {
             Text parsed = com.joragaka.ptdialogue.client.DialoguePacketHandler.parseJsonToText(e.message());
             history.add(new Entry(e.icon(), e.name(), e.color(), parsed, e.timestamp()));
         }
+        version++;
         System.out.println("[ptdialogue] Loaded " + history.size() + " history entries from server");
     }
 
@@ -55,15 +59,20 @@ public class DialogueHistory {
     public static void appendFromServer(String icon, String name, int color,
                                         Text message, long timestamp) {
         history.add(new Entry(icon, name, color, message, timestamp));
+        version++;
     }
 
     /** Called on disconnect — clear local cache (server already has it saved). */
     public static void onDisconnect() {
         history.clear();
+        version++;
     }
 
     /** Return an unmodifiable view of history (oldest first). */
     public static List<Entry> getEntries() {
         return Collections.unmodifiableList(history);
     }
+
+    /** Return a monotonically increasing version counter to detect changes without heavy operations. */
+    public static long getVersion() { return version; }
 }

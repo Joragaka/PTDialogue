@@ -35,6 +35,14 @@ public class DialogueHistoryScreen extends Screen {
     private int totalContentHeight = 0;
     private final List<BakedEntry> bakedEntries = new ArrayList<>();
 
+    // Caching: avoid rebaking every frame — track last known state
+    private long lastKnownHistoryVersion = -1L;
+    private int lastKnownWidth = -1;
+    private int lastKnownHeight = -1;
+    private float lastKnownStoredScale = -1f;
+    private float lastKnownEdgePadding = -1f;
+    private float lastKnownVerticalPaddingFrac = -1f;
+
     // runtime computed sizes (GUI units)
     private float currentTextScale = 1.0f; // matrix scale applied to text rendering
     private int headSizeGui = 16;
@@ -88,7 +96,9 @@ public class DialogueHistoryScreen extends Screen {
     @Override
     public void resize(int width, int height) {
         super.resize(width, height);
-        rebakeEntries();
+        // mark stale so next render will rebake
+        lastKnownWidth = -1;
+        lastKnownHeight = -1;
         clampScroll();
     }
 
@@ -194,6 +204,14 @@ public class DialogueHistoryScreen extends Screen {
 
         if (!bakedEntries.isEmpty()) totalHeight += ENTRY_GAP * (bakedEntries.size() - 1);
         totalContentHeight = totalHeight;
+
+        // update cached tracking values
+        lastKnownHistoryVersion = DialogueHistory.getVersion();
+        lastKnownWidth = this.width;
+        lastKnownHeight = this.height;
+        lastKnownStoredScale = DialogueClientConfig.getStoredWindowScale();
+        lastKnownEdgePadding = DialogueClientConfig.getEdgePadding();
+        lastKnownVerticalPaddingFrac = DialogueClientConfig.getVerticalPaddingFraction();
     }
 
     private int getVerticalPadding() {
@@ -229,8 +247,17 @@ public class DialogueHistoryScreen extends Screen {
 
     @Override
     public void render(DrawContext drawContext, int mouseX, int mouseY, float delta) {
-        // Ensure layout follows latest config each frame
-        rebakeEntries();
+        // Recompute wrapped lines only when necessary (history changed, window size or relevant config changed)
+        boolean needsRebake = false;
+        if (lastKnownHistoryVersion != DialogueHistory.getVersion()) needsRebake = true;
+        if (lastKnownWidth != this.width || lastKnownHeight != this.height) needsRebake = true;
+        float storedScale = DialogueClientConfig.getStoredWindowScale();
+        if (Float.compare(storedScale, lastKnownStoredScale) != 0) needsRebake = true;
+        float edgePad = DialogueClientConfig.getEdgePadding();
+        if (Float.compare(edgePad, lastKnownEdgePadding) != 0) needsRebake = true;
+        float vpadFrac = DialogueClientConfig.getVerticalPaddingFraction();
+        if (Float.compare(vpadFrac, lastKnownVerticalPaddingFrac) != 0) needsRebake = true;
+        if (needsRebake) rebakeEntries();
 
         // Update animation progress (time-based)
         if (animStartTimeNs <= 0L) animStartTimeNs = System.nanoTime();
@@ -444,6 +471,17 @@ public class DialogueHistoryScreen extends Screen {
     private void drawEntryHead(DrawContext drawContext, String icon, int x, int y, int size, float alpha) {
         MinecraftClient mc = MinecraftClient.getInstance();
 
+        // Resolve selector @s -> current player's name so we use local player's skin texture
+        String resolvedIcon = icon;
+        if ("@s".equals(icon)) {
+            if (mc.player != null && mc.player.getGameProfile() != null) {
+                // Use raw profile name (unformatted) so we resolve exact username
+                try { resolvedIcon = mc.player.getGameProfile().name(); } catch (Throwable t) { resolvedIcon = mc.player.getName().getString(); }
+            } else {
+                resolvedIcon = null;
+            }
+        }
+
         if (CustomIconCache.isCustomIcon(icon)) {
             Identifier customTex = CustomIconCache.getIconTextureId(icon);
             if (customTex != null) {
@@ -454,14 +492,40 @@ public class DialogueHistoryScreen extends Screen {
             return;
         }
 
-        Identifier headId = SkinCache.getHeadTextureId(icon);
+        // Prefer resolvedIcon (e.g. when icon == "@s") for skin lookup
+        // If this icon references the local player, prefer the local player's SkinTextures first
+        boolean isLocalPlayerIcon = false;
+        if (mc.player != null && resolvedIcon != null) {
+            try { isLocalPlayerIcon = resolvedIcon.equals(mc.player.getGameProfile().name()); } catch (Throwable ignored) {}
+        }
+
+        if (isLocalPlayerIcon) {
+            // Prefer PlayerListEntry for local player (may contain SkinTextures). Avoid calling entity methods not present in mappings.
+            if (mc.getNetworkHandler() != null) {
+                PlayerListEntry le = mc.getNetworkHandler().getPlayerListEntry(resolvedIcon);
+                if (le != null) {
+                    SkinTextures st = le.getSkinTextures();
+                    if (st != null) {
+                        int colorArgb = applyAlphaToColor(0xFFFFFFFF, alpha);
+                        PlayerSkinDrawer.draw(drawContext, st, x, y, size, colorArgb);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Try cached head texture next (fast), then fall back to PlayerListEntry
+        Identifier headId = null;
+        if (resolvedIcon != null) headId = SkinCache.getHeadTextureId(resolvedIcon);
         if (headId != null) {
             drawTex(drawContext, headId, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
             return;
         }
 
         if (mc.getNetworkHandler() != null) {
-            PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(icon);
+            PlayerListEntry entry = null;
+            if (resolvedIcon != null) entry = mc.getNetworkHandler().getPlayerListEntry(resolvedIcon);
+            if (entry == null && icon != null) entry = mc.getNetworkHandler().getPlayerListEntry(icon);
             if (entry != null) {
                 SkinTextures skinTextures = entry.getSkinTextures();
                 if (skinTextures != null) {

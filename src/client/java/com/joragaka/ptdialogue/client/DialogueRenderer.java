@@ -242,6 +242,17 @@ public class DialogueRenderer {
     }
 
     private static void drawPlayerHead(DrawContext drawContext, MinecraftClient client, String icon, int x, int y, int size, float alpha) {
+        // Resolve selector @s -> current player's name so we use local player's skin texture
+        String resolvedIcon = icon;
+        if ("@s".equals(icon)) {
+            if (client.player != null && client.player.getGameProfile() != null) {
+                // Use raw profile name (unformatted) so SkinCache and player lookup match exact username
+                resolvedIcon = client.player.getGameProfile().name();
+            } else {
+                resolvedIcon = null;
+            }
+        }
+
         if (CustomIconCache.isCustomIcon(icon)) {
             Identifier customTex = CustomIconCache.getIconTextureId(icon);
             if (customTex != null) {
@@ -252,14 +263,58 @@ public class DialogueRenderer {
             return;
         }
 
-        Identifier headId = SkinCache.getHeadTextureId(icon);
+        // If resolvedIcon is set (possibly via @s) prefer that for skin lookup
+        // If this icon references the local player, prefer PlayerEntity skinTextures first (most authoritative)
+        boolean isLocalPlayerIcon = false;
+        if (client.player != null && resolvedIcon != null) {
+            try {
+                isLocalPlayerIcon = resolvedIcon.equals(client.player.getGameProfile().name());
+            } catch (Throwable ignored) {
+                // fallback: not critical
+            }
+        }
+
+        // Try to draw directly from the local player entity's SkinTextures if this is the local player's icon
+        if (isLocalPlayerIcon) {
+            // Prefer PlayerListEntry for local player (may contain SkinTextures). Do not call entity methods that
+            // are mapping-dependent.
+            if (client.getNetworkHandler() != null) {
+                PlayerListEntry localEntry = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
+                if (localEntry != null) {
+                    SkinTextures skinTextures = localEntry.getSkinTextures();
+                    if (skinTextures != null) {
+                        int colorArgb = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
+                        PlayerSkinDrawer.draw(drawContext, skinTextures, x, y, size, colorArgb);
+                        return;
+                    }
+                }
+            }
+        }
+
+        if (client.getNetworkHandler() != null) {
+            PlayerListEntry localEntry = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
+            if (localEntry != null) {
+                SkinTextures skinTextures = localEntry.getSkinTextures();
+                if (skinTextures != null) {
+                    int colorArgb = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
+                    PlayerSkinDrawer.draw(drawContext, skinTextures, x, y, size, colorArgb);
+                    return;
+                }
+            }
+        }
+
+        // Next try cached head texture (faster) and then PlayerListEntry fallback for non-local names
+        Identifier headId = null;
+        if (resolvedIcon != null) headId = SkinCache.getHeadTextureId(resolvedIcon);
         if (headId != null) {
             drawCustomTexture(drawContext, headId, x, y, size, size, alpha);
             return;
         }
 
         if (client.getNetworkHandler() != null) {
-            PlayerListEntry entry = client.getNetworkHandler().getPlayerListEntry(icon);
+            PlayerListEntry entry = null;
+            if (resolvedIcon != null) entry = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
+            if (entry == null && icon != null) entry = client.getNetworkHandler().getPlayerListEntry(icon);
             if (entry != null) {
                 SkinTextures skinTextures = entry.getSkinTextures();
                 if (skinTextures != null) {

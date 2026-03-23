@@ -4,9 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="bug fixes">
+    <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="log spam fix">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -200,13 +202,22 @@
       <option name="project" value="LOCAL" />
       <updated>1774207804251</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="log spam fix">
+      <option name="closed" value="true" />
+      <created>1774272141528</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1774272141528</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Add some links" />
     <MESSAGE value="Alt fonts via resourcepack, + raw json compability for names" />
     <MESSAGE value="bug fixes" />
-    <option name="LAST_COMMIT_MESSAGE" value="bug fixes" />
+    <MESSAGE value="log spam fix" />
+    <option name="LAST_COMMIT_MESSAGE" value="log spam fix" />
   </component>
 </project>
