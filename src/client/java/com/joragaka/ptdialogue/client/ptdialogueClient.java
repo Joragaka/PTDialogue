@@ -5,6 +5,9 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import com.joragaka.ptdialogue.IconSyncPayload;
+import com.joragaka.ptdialogue.IconRequestPayload;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.util.Identifier;
@@ -20,6 +23,12 @@ public class ptdialogueClient implements ClientModInitializer {
     public void onInitializeClient() {
         // Register packet handler for server-sent dialogue packets
         DialoguePacketHandler.register();
+
+        // Ensure payload types are registered on client (idempotent)
+        try {
+            PayloadTypeRegistry.playS2C().register(IconSyncPayload.ID, IconSyncPayload.CODEC);
+            PayloadTypeRegistry.playC2S().register(IconRequestPayload.ID, IconRequestPayload.CODEC);
+        } catch (Throwable ignored) {}
 
         // Register handler for icon/head sync from server
         IconSyncHandler.register();

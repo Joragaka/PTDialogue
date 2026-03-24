@@ -96,6 +96,15 @@ public class DialogueCommand {
                     }
                 }
 
+                // Normalize name: allow quoted names and support @s replacement per-recipient
+                String nameToSend = name == null ? "" : name.trim();
+                if (nameToSend.length() >= 2 && ((nameToSend.startsWith("\"") && nameToSend.endsWith("\"")) || (nameToSend.startsWith("'") && nameToSend.endsWith("'")))) {
+                    nameToSend = nameToSend.substring(1, nameToSend.length() - 1);
+                }
+                if ("@s".equals(nameToSend)) {
+                    try { nameToSend = serverPlayer.getGameProfile().name(); } catch (Throwable ignored) { nameToSend = ""; }
+                }
+
                 // Determine skin UUID to send when icon == @s
                 String skinUuid = null;
                 if ("@s".equals(iconToSend)) {
@@ -116,10 +125,10 @@ public class DialogueCommand {
                 }
 
                 // Send raw icon (may be "@s") and optional skinUuid
-                ServerPlayNetworking.send(serverPlayer, new DialoguePayload(iconToSend, name, colorname, message, skinUuid));
+                ServerPlayNetworking.send(serverPlayer, new DialoguePayload(iconToSend, nameToSend, colorname, message, skinUuid));
                 // Save raw icon into history; include skinUuid so clients can request exact skin
                 HistoryManager.record(serverPlayer, context.getSource().getServer(),
-                        iconToSend, name, parseColor(colorname), message, skinUuid);
+                        iconToSend, nameToSend, parseColor(colorname), message, skinUuid);
              }
          }
 

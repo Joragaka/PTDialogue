@@ -176,15 +176,18 @@ public class DialogueHistoryScreen extends Screen {
              int nameWidthUnscaled = textRenderer.getWidth(nameLine);
 
              Text messageText = entry.getMessage();
-            // First line has reduced width (name occupies space), subsequent lines use full width
-            int firstLineWidth = Math.max(1, wrapWidthUnscaled - nameWidthUnscaled);
-
-            TextWrapHelper.SplitResult split = TextWrapHelper.splitFirstLine(textRenderer, messageText, firstLineWidth);
-            OrderedText firstMsgLine = split.firstLine;
+            // Wrap the combined name+message as a whole so history matches chat rendering
+            MutableText combined = nameText.copy().append(messageText);
+            java.util.List<OrderedText> wrapped = textRenderer.wrapLines(combined, wrapWidthUnscaled);
+            OrderedText fullFirstLine = null;
             java.util.List<OrderedText> subsequentLines = new java.util.ArrayList<>();
-            if (split.remainder != null && !split.remainder.getString().isEmpty()) {
-                subsequentLines.addAll(textRenderer.wrapLines(split.remainder, wrapWidthUnscaled));
+            if (!wrapped.isEmpty()) {
+                fullFirstLine = wrapped.get(0);
+                if (wrapped.size() > 1) {
+                    for (int i = 1; i < wrapped.size(); i++) subsequentLines.add(wrapped.get(i));
+                }
             }
+            OrderedText firstMsgLine = null; // not used when fullFirstLine is present
 
             int totalLines = 1 + subsequentLines.size();
             int textHeightGui  = totalLines * scaledLineSpacing;
@@ -192,16 +195,16 @@ public class DialogueHistoryScreen extends Screen {
             int entryHeightGui = innerHeightGui + boxPaddingGui * 2;
 
             int maxLineW = nameWidthUnscaled;
-            if (firstMsgLine != null) {
-                int line0W = nameWidthUnscaled + textRenderer.getWidth(firstMsgLine);
-                if (line0W > maxLineW) maxLineW = line0W;
-            }
-            for (OrderedText line : subsequentLines) {
-                int w = textRenderer.getWidth(line);
+            if (fullFirstLine != null) {
+                int w = textRenderer.getWidth(fullFirstLine);
                 if (w > maxLineW) maxLineW = w;
             }
+             for (OrderedText line : subsequentLines) {
+                 int w = textRenderer.getWidth(line);
+                 if (w > maxLineW) maxLineW = w;
+             }
 
-            bakedEntries.add(new BakedEntry(entry, nameLine, nameWidthUnscaled, firstMsgLine, null, subsequentLines, entryHeightGui, maxLineW));
+            bakedEntries.add(new BakedEntry(entry, nameLine, nameWidthUnscaled, firstMsgLine, fullFirstLine, subsequentLines, entryHeightGui, maxLineW));
             totalHeight += entryHeightGui;
         }
 
@@ -395,9 +398,11 @@ public class DialogueHistoryScreen extends Screen {
 
             drawContext.disableScissor();
 
-            if (totalContentHeight > visibleHeight) {
-                drawScrollbar(drawContext, this.width - HORIZONTAL_PADDING - 6, areaTop, 6, visibleHeight);
-            }
+            // Previously drew a scrollbar on the right when content overflowed. Remove visual scrollbar
+            // so history opens without the right-hand slider while keeping scroll behavior intact.
+            // if (totalContentHeight > visibleHeight) {
+            //     drawScrollbar(drawContext, this.width - HORIZONTAL_PADDING - 6, areaTop, 6, visibleHeight);
+            // }
 
             super.render(drawContext, mouseX, mouseY, delta);
         } catch (Exception e) {

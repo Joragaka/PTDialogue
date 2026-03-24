@@ -31,7 +31,6 @@ import java.util.concurrent.TimeUnit;
  */
 public class IconSyncManager {
 
-    private static final String ICONS_FOLDER = "ptlore";
     private static final String HEADS_SUBFOLDER = ".skincache/heads";
 
     private static final HttpClient HTTP = HttpClient.newBuilder()
@@ -41,6 +40,7 @@ public class IconSyncManager {
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     /** Nicknames of players whose heads have been cached on this server */
+    // теперь используем ключи в форме: lowercased-name или uuid
     private static final Set<String> knownPlayers = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     /** Tracks known icon files: relative path → MD5 hash. Used to detect new/changed files. */
@@ -52,93 +52,199 @@ public class IconSyncManager {
     /** Periodic scanner for icon folder changes */
     private static ScheduledExecutorService iconWatcherExecutor;
 
+    /** Dedicated executor for IO and network background tasks to avoid common-pool starvation */
+    private static final java.util.concurrent.ExecutorService IO_EXECUTOR = Executors.newCachedThreadPool(r -> {
+        Thread t = new Thread(r, "PTDialogue-IO");
+        t.setDaemon(true);
+        return t;
+    });
+
     /** Interval in seconds between folder scans */
     private static final int SCAN_INTERVAL_SECONDS = 5;
 
+    /** Limit number of icons/heads to send at join to avoid blocking server tick */
+    private static final int MAX_ICONS_PER_JOIN = 50;
+
+    // Emergency switch: disable automatic sending of all icons/heads on player join to prevent server freezes.
+    // Set to true to re-enable (use after profiling/optimizations).
+    private static volatile boolean AUTO_SEND_ON_JOIN = false;
+
+    // Global emergency switch: completely disable server-side icon/head sync and background workers.
+    // Set to false to re-enable once performance fixes are validated.
+    private static volatile boolean DISABLE_SERVER_SYNC = true;
+
     public static void register() {
-        // Register the S2C payload type
+        // Register payload types always — client needs these registered to create receivers
         PayloadTypeRegistry.playS2C().register(IconSyncPayload.ID, IconSyncPayload.CODEC);
-        // Register the C2S payload type so server recognizes IconRequestPayload structure
         PayloadTypeRegistry.playC2S().register(IconRequestPayload.ID, IconRequestPayload.CODEC);
 
-        // When a player joins, send all icons + all cached heads
-        // Small delay to ensure client networking is fully initialized
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ServerPlayerEntity player = handler.getPlayer();
+        if (DISABLE_SERVER_SYNC) {
+            System.out.println("[PTDialogue] Server-side icon sync DISABLED (emergency). Background tasks won't start.");
+        }
 
-            // Store server reference for periodic broadcasting
-            serverInstance = server;
+        // Server-side logic (join handler, watcher, lifecycle) only when not disabled
+        if (!DISABLE_SERVER_SYNC) {
+            // When a player joins, send all icons + all cached heads
+            // Small delay to ensure client networking is fully initialized
+            ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+                ServerPlayerEntity player = handler.getPlayer();
 
-            // Start periodic icon folder scanner if not already running
-            startIconWatcher(server);
+                // Store server reference for periodic broadcasting
+                serverInstance = server;
 
-            // Also fetch and cache this player's head if not already done
-            String name = player.getGameProfile().name();
-            if (knownPlayers.add(name.toLowerCase())) {
-                fetchAndCacheHead(name, server);
-            }
+                // Start periodic icon folder scanner if not already running
+                // start watcher asynchronously (initial snapshot will be built in background)
+                startIconWatcher();
 
-            // Delay sync by 1 second to ensure client networking is fully initialized
-            server.execute(() -> {
-                // Schedule with delay using a simple approach
-                CompletableFuture.runAsync(() -> {
-                    try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
-                    server.execute(() -> {
-                        if (player.isDisconnected()) return;
+                // Also fetch and cache this player's head if not already done
+                String profileName = null;
+                try { profileName = player.getGameProfile().name(); } catch (Throwable ignored) {}
+                final String displayName = (profileName == null || profileName.isEmpty()) ? player.getName().getString() : profileName;
+                String uuidKey;
+                try { uuidKey = player.getUuid().toString().toLowerCase(); } catch (Throwable ignored) { uuidKey = ""; }
+                String nameKey = profileName == null ? "" : profileName.toLowerCase();
 
-                        // Enforce server-side mod requirement: if the client does not support our mod's
-                        // networking channel, disconnect them with an explanatory message.
-                        try {
-                            boolean hasMod = ServerPlayNetworking.canSend(player, IconSyncPayload.ID);
-                            if (!hasMod) {
-                                System.out.println("[PTDialogue] Disconnecting player " + name + " — missing PTDialogue mod.");
-                                player.networkHandler.disconnect(net.minecraft.text.Text.literal("You must install the PTDialogue mod to join this server."));
-                                return;
-                            }
-                        } catch (Throwable t) {
-                            // If canSend isn't available for some reason, fall back to allowing join and logging
-                            System.err.println("[PTDialogue] Warning: failed to check client mod presence: " + t.getMessage());
-                        }
+                if (!uuidKey.isEmpty() && knownPlayers.add(uuidKey)) {
+                    fetchAndCacheHeadByUuid(uuidKey, server);
+                }
+                if (!nameKey.isEmpty() && knownPlayers.add(nameKey)) {
+                    fetchAndCacheHead(nameKey, server);
+                }
 
-                        System.out.println("[PTDialogue] Sending icons and heads to " + name);
-                        sendAllIcons(player);
-                        sendAllCachedHeads(player);
-                    });
-                });
-            });
-        });
-
-        // Handle client requests for re-sending a specific icon
-        ServerPlayNetworking.registerGlobalReceiver(IconRequestPayload.ID,
-                (payload, context) -> {
+                // Short server-thread check, then start background preparation + delayed send
+                server.execute(() -> {
+                    if (player.isDisconnected()) return;
                     try {
-                        String relativePath = payload.path();
-                        Path file = getIconsDir().resolve(relativePath.replace('/', java.io.File.separatorChar));
-                        if (!Files.exists(file) || !Files.isRegularFile(file)) return;
-                        byte[] data = Files.readAllBytes(file);
-                        String md5 = computeMd5(data);
-                        ServerPlayerEntity player = context.player();
-                        context.server().execute(() ->
-                                ServerPlayNetworking.send(player, new IconSyncPayload(relativePath, data, md5)));
-                    } catch (Exception e) {
-                        System.err.println("[PTDialogue] Failed to handle icon request: " + e.getMessage());
+                        boolean hasMod = ServerPlayNetworking.canSend(player, IconSyncPayload.ID);
+                        if (!hasMod) {
+                            System.out.println("[PTDialogue] Disconnecting player " + displayName + " — missing PTDialogue mod.");
+                            player.networkHandler.disconnect(net.minecraft.text.Text.literal("You must install the PTDialogue mod to join this server."));
+                            return;
+                        }
+                    } catch (Throwable t) {
+                        System.err.println("[PTDialogue] Warning: failed to check client mod presence: " + t.getMessage());
                     }
-                });
 
-        // Stop the watcher when server stops
-        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-            stopIconWatcher();
-            serverInstance = null;
-        });
+                    // Start a background task that waits a bit (allow client to initialize) then prepares and sends icons
+                    if (AUTO_SEND_ON_JOIN) {
+                        CompletableFuture.runAsync(() -> {
+                            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                            sendAllIconsAsync(player);
+                            sendAllCachedHeadsAsync(player);
+                        }, IO_EXECUTOR);
+                    } else {
+                        System.out.println("[PTDialogue] AUTO_SEND_ON_JOIN is disabled — skipping icon/head sync for " + displayName);
+                    }
+                  });
+            });
+
+
+            // Stop the watcher when server stops
+            ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+                stopIconWatcher();
+                serverInstance = null;
+                try { IO_EXECUTOR.shutdownNow(); } catch (Throwable ignored) {}
+            });
+        }
+    }
+
+    // Asynchronous variant: read all icon files in a background thread and send payloads on the server thread
+    private static void sendAllIconsAsync(ServerPlayerEntity player) {
+        CompletableFuture.runAsync(() -> {
+            Path iconsDir = getIconsDir();
+            if (!Files.isDirectory(iconsDir)) return;
+            List<IconSyncPayload> toSend = new ArrayList<>();
+            try {
+                collectFilesRecursive(iconsDir, "", toSend);
+            } catch (Exception e) {
+                System.err.println("[PTDialogue] Failed to prepare icons for " + player.getGameProfile().name() + ": " + e.getMessage());
+                return;
+            }
+            List<IconSyncPayload> sendSlice = toSend;
+            if (toSend.size() > MAX_ICONS_PER_JOIN) {
+                System.out.println("[PTDialogue] Limiting icons sent on join to " + MAX_ICONS_PER_JOIN + " (available=" + toSend.size() + ")");
+                sendSlice = new ArrayList<>(toSend.subList(0, MAX_ICONS_PER_JOIN));
+            }
+            MinecraftServer srv = serverInstance;
+            if (srv == null) return;
+            // Batch-send: schedule a single runnable on server thread that sends all payloads to the player
+            final List<IconSyncPayload> finalSend = sendSlice;
+            srv.execute(() -> {
+                try {
+                    if (player.isDisconnected()) return;
+                    for (IconSyncPayload payload : finalSend) {
+                        try {
+                            ServerPlayNetworking.send(player, payload);
+                        } catch (Throwable ignored) {}
+                    }
+                } catch (Throwable t) {
+                    System.err.println("[PTDialogue] Failed to send prepared icons to " + player.getGameProfile().name() + ": " + t.getMessage());
+                }
+            });
+        }, IO_EXECUTOR);
+    }
+
+    private static void collectFilesRecursive(Path baseDir, String prefix, List<IconSyncPayload> out) throws Exception {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(baseDir)) {
+            for (Path entry : stream) {
+                String fileName = entry.getFileName().toString();
+                if (fileName.equals(".skincache")) continue;
+                if (Files.isDirectory(entry)) {
+                    String subPrefix = prefix.isEmpty() ? fileName : prefix + "/" + fileName;
+                    collectFilesRecursive(entry, subPrefix, out);
+                } else if (fileName.toLowerCase().endsWith(".png")) {
+                    String relativePath = prefix.isEmpty() ? fileName : prefix + "/" + fileName;
+                    byte[] data = Files.readAllBytes(entry);
+                    String md5 = computeMd5(data);
+                    out.add(new IconSyncPayload(relativePath, data, md5));
+                }
+            }
+        }
+    }
+
+    // Asynchronous variant for cached heads
+    private static void sendAllCachedHeadsAsync(ServerPlayerEntity player) {
+        CompletableFuture.runAsync(() -> {
+             Path headsDir = getHeadsDir();
+             if (!Files.isDirectory(headsDir)) return;
+             List<IconSyncPayload> toSend = new ArrayList<>();
+             try (DirectoryStream<Path> stream = Files.newDirectoryStream(headsDir, "*.png")) {
+                 for (Path headFile : stream) {
+                     String nick = headFile.getFileName().toString().replace(".png", "");
+                     byte[] data = Files.readAllBytes(headFile);
+                     String md5 = computeMd5(data);
+                     toSend.add(new IconSyncPayload(".heads/" + nick + ".png", data, md5));
+                 }
+             } catch (Exception e) {
+                 System.err.println("[PTDialogue] Failed to prepare cached heads for " + player.getGameProfile().name() + ": " + e.getMessage());
+                 return;
+             }
+            List<IconSyncPayload> sendSlice = toSend;
+            if (toSend.size() > MAX_ICONS_PER_JOIN) sendSlice = new ArrayList<>(toSend.subList(0, MAX_ICONS_PER_JOIN));
+             MinecraftServer srv = serverInstance;
+             if (srv == null) return;
+             final List<IconSyncPayload> finalSend = sendSlice;
+             srv.execute(() -> {
+                try {
+                    if (player.isDisconnected()) return;
+                    for (IconSyncPayload payload : finalSend) {
+                        try { ServerPlayNetworking.send(player, payload); } catch (Throwable ignored) {}
+                    }
+                } catch (Throwable t) {
+                    System.err.println("[PTDialogue] Failed to send prepared cached heads to " + player.getGameProfile().name() + ": " + t.getMessage());
+                }
+            });
+        }, IO_EXECUTOR);
     }
 
     // ─────────────────── Periodic icon folder scanning ───────────────────
 
-    private static synchronized void startIconWatcher(MinecraftServer server) {
+    private static synchronized void startIconWatcher() {
         if (iconWatcherExecutor != null && !iconWatcherExecutor.isShutdown()) return;
 
         // Build initial snapshot of known icons
-        buildIconSnapshot();
+        // Build initial snapshot asynchronously to avoid blocking server tick
+        CompletableFuture.runAsync(() -> buildIconSnapshot(), IO_EXECUTOR);
 
         iconWatcherExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "PTDialogue-IconWatcher");
@@ -228,9 +334,6 @@ public class IconSyncManager {
             }
         }
 
-        // Find deleted files (currently we don't handle deletion sync, just track)
-        Set<String> removedPaths = new HashSet<>(knownIconHashes.keySet());
-        removedPaths.removeAll(currentHashes.keySet());
 
         // Update snapshot
         knownIconHashes.clear();
@@ -238,25 +341,32 @@ public class IconSyncManager {
 
         if (changedPaths.isEmpty()) return;
 
-        // Broadcast changed icons to all online players
+        // Read changed files in this watcher thread (IO off server), then schedule sends on server thread
+        List<IconSyncPayload> payloads = new ArrayList<>();
+        for (String relativePath : changedPaths) {
+            Path file = iconsDir.resolve(relativePath.replace('/', java.io.File.separatorChar));
+            try {
+                byte[] data = Files.readAllBytes(file);
+                String md5 = computeMd5(data);
+                payloads.add(new IconSyncPayload(relativePath, data, md5));
+            } catch (Exception e) {
+                System.err.println("[PTDialogue] Failed to read changed icon '" + relativePath + "': " + e.getMessage());
+            }
+        }
+
+        if (payloads.isEmpty()) return;
+
         server.execute(() -> {
             List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
             if (players.isEmpty()) return;
-
-            for (String relativePath : changedPaths) {
-                Path file = iconsDir.resolve(relativePath.replace('/', java.io.File.separatorChar));
-                try {
-                    byte[] data = Files.readAllBytes(file);
-                    String md5 = computeMd5(data);
-                    IconSyncPayload payload = new IconSyncPayload(relativePath, data, md5);
-
-                    for (ServerPlayerEntity player : players) {
+            for (IconSyncPayload payload : payloads) {
+                for (ServerPlayerEntity player : players) {
+                    try {
+                        if (player.isDisconnected()) continue;
                         ServerPlayNetworking.send(player, payload);
-                    }
-                    System.out.println("[PTDialogue] Hot-synced icon to all players: " + relativePath + " (" + data.length + " bytes)");
-                } catch (Exception e) {
-                    System.err.println("[PTDialogue] Failed to hot-sync icon '" + relativePath + "': " + e.getMessage());
+                    } catch (Throwable ignored) {}
                 }
+                System.out.println("[PTDialogue] Hot-synced icon to all players: " + payload.path() + " (" + payload.data().length + " bytes)");
             }
         });
     }
@@ -372,24 +482,33 @@ public class IconSyncManager {
             } catch (Exception e) {
                 System.err.println("[PTDialogue] Failed to fetch head for " + playerName + ": " + e.getMessage());
             }
-        });
+        }, IO_EXECUTOR);
     }
 
     private static void broadcastHead(String key, MinecraftServer server) {
         Path headFile = getHeadsDir().resolve(key + ".png");
         if (!Files.exists(headFile)) return;
 
-        try {
-            byte[] data = Files.readAllBytes(headFile);
-            String md5 = computeMd5(data);
-            IconSyncPayload payload = new IconSyncPayload(".heads/" + key + ".png", data, md5);
-
-            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                ServerPlayNetworking.send(player, payload);
+        // Read file in IO executor, then schedule sending on server thread
+        CompletableFuture.runAsync(() -> {
+            try {
+                byte[] data = Files.readAllBytes(headFile);
+                String md5 = computeMd5(data);
+                IconSyncPayload payload = new IconSyncPayload(".heads/" + key + ".png", data, md5);
+                // schedule send
+                server.execute(() -> {
+                    try {
+                        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                            try { ServerPlayNetworking.send(player, payload); } catch (Throwable ignored) {}
+                        }
+                    } catch (Throwable t) {
+                        System.err.println("[PTDialogue] Failed to broadcast head on server thread: " + t.getMessage());
+                    }
+                });
+            } catch (Exception e) {
+                System.err.println("[PTDialogue] Failed to read head file for broadcast: " + e.getMessage());
             }
-        } catch (Exception e) {
-            System.err.println("[PTDialogue] Failed to broadcast head: " + e.getMessage());
-        }
+        }, IO_EXECUTOR);
     }
 
     // Check whether a cached head exists for the given key (lowercased name or uuid)
@@ -404,16 +523,25 @@ public class IconSyncManager {
 
     // Send a single cached head to a specific player (if present)
     public static void sendHeadToPlayer(String key, ServerPlayerEntity player) {
-        try {
-            Path headFile = getHeadsDir().resolve(key.toLowerCase() + ".png");
-            if (!Files.exists(headFile) || !Files.isRegularFile(headFile)) return;
-            byte[] data = Files.readAllBytes(headFile);
-            String md5 = computeMd5(data);
-            IconSyncPayload payload = new IconSyncPayload(".heads/" + key.toLowerCase() + ".png", data, md5);
-            ServerPlayNetworking.send(player, payload);
-        } catch (Exception e) {
-            System.err.println("[PTDialogue] Failed to send head to player: " + e.getMessage());
-        }
+        Path headFile = getHeadsDir().resolve(key.toLowerCase() + ".png");
+        if (!Files.exists(headFile) || !Files.isRegularFile(headFile)) return;
+        CompletableFuture.runAsync(() -> {
+            try {
+                byte[] data = Files.readAllBytes(headFile);
+                String md5 = computeMd5(data);
+                IconSyncPayload payload = new IconSyncPayload(".heads/" + key.toLowerCase() + ".png", data, md5);
+                // schedule send on server thread
+                try {
+                    var srv = serverInstance;
+                    if (srv == null) return;
+                    srv.execute(() -> {
+                        try { ServerPlayNetworking.send(player, payload); } catch (Throwable ignored) {}
+                    });
+                } catch (Throwable ignored) {}
+            } catch (Exception e) {
+                System.err.println("[PTDialogue] Failed to prepare head for player: " + e.getMessage());
+            }
+        }, IO_EXECUTOR);
     }
 
     // Public helper: ensure a player's head is cached (async fetch) — safe to call repeatedly.
@@ -425,8 +553,6 @@ public class IconSyncManager {
         fetchAndCacheHead(playerName, server);
     }
     // ─────────────────── Head compositing ───────────────────
-    // Server sends raw skin PNG — client handles compositing.
-    // This avoids AWT dependency on server (java.desktop module may be missing).
 
     private static String extractSkinUrl(String profileJson) {
         try {
@@ -473,5 +599,81 @@ public class IconSyncManager {
         } catch (Exception e) {
             return "";
         }
+    }
+
+    // Public helper: get the preferred head key for a player (uuid preferred, fallback to name)
+    public static String getHeadKeyForPlayer(ServerPlayerEntity player) {
+        if (player == null) return "";
+        try {
+            String uuidKey = player.getUuid().toString().toLowerCase();
+            if (!uuidKey.isBlank()) return uuidKey;
+        } catch (Throwable ignored) {}
+        try {
+            String name = player.getGameProfile().name();
+            if (name != null && !name.isBlank()) return name.toLowerCase();
+        } catch (Throwable ignored) {}
+        return "";
+    }
+
+    // Public helper: ensure a specific player's head is cached by uuid (if possible)
+    public static void ensureHeadCachedForPlayer(ServerPlayerEntity player, MinecraftServer server) {
+        if (player == null || server == null) return;
+        String key = getHeadKeyForPlayer(player);
+        if (key.isEmpty()) return;
+        if (hasHead(key)) return;
+
+        // If we got a uuid-like key (no dashes), try fetch by uuid first
+        if (key.matches("[0-9a-f]{32}")) {
+            fetchAndCacheHeadByUuid(key, server);
+        } else {
+            fetchAndCacheHead(key, server);
+        }
+    }
+
+    // Fetch head directly by uuid (expects compact 32 hex chars)
+    private static void fetchAndCacheHeadByUuid(String uuid32, MinecraftServer server) {
+        String key = uuid32.toLowerCase();
+        Path skinFile = getHeadsDir().resolve(key + ".png");
+
+        if (Files.exists(skinFile)) {
+            broadcastHead(key, server);
+            return;
+        }
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                // Query sessionserver profile by uuid (with dashes inserted)
+                String dashed = uuid32;
+                if (uuid32.length() == 32) {
+                    dashed = uuid32.replaceFirst("(.{8})(.{4})(.{4})(.{4})(.{12})", "$1-$2-$3-$4-$5");
+                }
+
+                HttpResponse<String> profileResp = HTTP.send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create("https://sessionserver.mojang.com/session/minecraft/profile/" + dashed))
+                                .timeout(TIMEOUT).GET().build(),
+                        HttpResponse.BodyHandlers.ofString());
+                if (profileResp.statusCode() != 200) return;
+
+                String skinUrl = extractSkinUrl(profileResp.body());
+                if (skinUrl == null) return;
+
+                HttpResponse<byte[]> skinResp = HTTP.send(
+                        HttpRequest.newBuilder()
+                                .uri(URI.create(skinUrl))
+                                .timeout(TIMEOUT).GET().build(),
+                        HttpResponse.BodyHandlers.ofByteArray());
+                if (skinResp.statusCode() != 200) return;
+
+                byte[] skinPng = skinResp.body();
+                Files.createDirectories(skinFile.getParent());
+                Files.write(skinFile, skinPng);
+
+                System.out.println("[PTDialogue] Cached skin for uuid head: " + uuid32);
+                server.execute(() -> broadcastHead(key, server));
+            } catch (Exception e) {
+                System.err.println("[PTDialogue] Failed to fetch head for uuid " + uuid32 + ": " + e.getMessage());
+            }
+        }, IO_EXECUTOR);
     }
 }
