@@ -196,9 +196,7 @@ public class HistoryManager {
                 o.addProperty("message", e.message());
                 o.addProperty("ts",      e.timestamp());
                 // If entry contains skinUuid include it in persisted JSON
-                if (e instanceof HistorySyncPayload.Entry he) {
-                    try { if (he.skinUuid() != null) o.addProperty("skinUuid", he.skinUuid()); } catch (Throwable ignored) {}
-                }
+                try { if (e.skinUuid() != null) o.addProperty("skinUuid", e.skinUuid()); } catch (Throwable ignored) {}
                 arr.add(o);
             }
             // write atomically via temp file and move
