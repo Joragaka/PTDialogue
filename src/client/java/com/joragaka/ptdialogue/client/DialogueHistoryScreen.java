@@ -6,13 +6,12 @@ import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.PlayerSkinDrawer;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.texture.NativeImage;
-import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
+import com.mojang.blaze3d.systems.RenderSystem;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,7 +21,7 @@ import java.util.List;
  */
 public class DialogueHistoryScreen extends Screen {
 
-    private static final Identifier BACKGROUND_TEXTURE = Identifier.of("ptdialogue", "textures/gui/dialogue_history_bg.png");
+    private static final Identifier BACKGROUND_TEXTURE = new Identifier("ptdialogue", "textures/gui/dialogue_history_bg.png");
 
     // Base constants (match DialogueRenderer)
     private static final float TEXT_HEIGHT_FRACTION = 0.025f; // text height as fraction of window height
@@ -30,9 +29,6 @@ public class DialogueHistoryScreen extends Screen {
 
     private static final int HORIZONTAL_PADDING = 20;
     private static final int ENTRY_GAP = 6;
-
-    // One-time debug set to avoid spamming which source provided the head for a given name
-    private static final java.util.Set<String> debugLoggedNames = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
 
     private double scrollOffset = 0;
     private int totalContentHeight = 0;
@@ -88,6 +84,7 @@ public class DialogueHistoryScreen extends Screen {
     @Override
     protected void init() {
         super.init();
+        refreshLocalPlayerHead();
         rebakeEntries();
         scrollToBottom();
         // start opening animation
@@ -96,9 +93,14 @@ public class DialogueHistoryScreen extends Screen {
         animProgress = 0f;
     }
 
+    /** Force-refresh the local player's composited head so the history shows the latest skin. */
+    private static void refreshLocalPlayerHead() {
+        ptdialogueClient.refreshLocalPlayerHead(MinecraftClient.getInstance());
+    }
+
     @Override
-    public void resize(int width, int height) {
-        super.resize(width, height);
+    public void resize(MinecraftClient client, int width, int height) {
+        super.resize(client, width, height);
         // mark stale so next render will rebake
         lastKnownWidth = -1;
         lastKnownHeight = -1;
@@ -237,8 +239,8 @@ public class DialogueHistoryScreen extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        scrollOffset -= verticalAmount * 20;
+    public boolean mouseScrolled(double mouseX, double mouseY, double amount) {
+        scrollOffset -= amount * 20;
         clampScroll();
         return true;
     }
@@ -285,6 +287,11 @@ public class DialogueHistoryScreen extends Screen {
         try {
             TextRenderer textRenderer = client.textRenderer;
 
+            // Establish blend state for this frame — external/vanilla code may leave blend disabled
+            // between frames (e.g. after DrawContext.fill(), world rendering, other mods).
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+
             // draw background (apply overall alpha via color argument)
             drawBackgroundTexture(drawContext, eased);
 
@@ -327,6 +334,9 @@ public class DialogueHistoryScreen extends Screen {
                     int boxAlphaInt = Math.max(0, Math.min(255, (int) (boxBaseAlpha * eased)));
                     int boxColor = (boxAlphaInt << 24);
                     drawContext.fill(boxX, y, boxX + contentBoxWidth, y + baked.entryHeight, boxColor);
+                    // fill() calls disableBlend internally — restore for subsequent transparent draws
+                    RenderSystem.enableBlend();
+                    RenderSystem.defaultBlendFunc();
 
                     int headX = boxX + boxPaddingScaled;
                     int headY = y + boxPaddingScaled + (Math.max(0, baked.entryHeight - boxPaddingScaled * 2 - headSizeScaled) / 2);
@@ -350,7 +360,7 @@ public class DialogueHistoryScreen extends Screen {
                     textStartY += 2;
 
                     var matricesLocal = drawContext.getMatrices();
-                    matricesLocal.scale(currentTextScale, currentTextScale);
+                    matricesLocal.scale(currentTextScale, currentTextScale, 1.0f);
 
                     int drawX = Math.max(0, Math.round(textX / Math.max(0.001f, currentTextScale)));
                     int currentY = Math.max(0, Math.round(textStartY / Math.max(0.001f, currentTextScale)));
@@ -391,7 +401,7 @@ public class DialogueHistoryScreen extends Screen {
                         currentY += unscaledLineSpacingDraw;
                     }
 
-                    matricesLocal.scale(1.0f / Math.max(0.001f, currentTextScale), 1.0f / Math.max(0.001f, currentTextScale));
+                    matricesLocal.scale(1.0f / Math.max(0.001f, currentTextScale), 1.0f / Math.max(0.001f, currentTextScale), 1.0f);
                  }
                  y += baked.entryHeight + ENTRY_GAP;
              }
@@ -438,40 +448,38 @@ public class DialogueHistoryScreen extends Screen {
     // modified drawBackgroundTexture to accept overall alpha
     private void drawBackgroundTexture(DrawContext drawContext, float alpha) {
         try {
-            var pipeline = RenderPipelines.GUI_TEXTURED;
-            MinecraftClient mc = MinecraftClient.getInstance();
+             MinecraftClient mc = MinecraftClient.getInstance();
 
-            int guiW = this.width;
-            int guiH = this.height;
-            int fbH  = mc.getWindow().getFramebufferHeight();
-            float guiScale = (guiH > 0) ? (float) fbH / (float) guiH : 1.0f;
+             int guiW = this.width;
+             int guiH = this.height;
+             int fbH  = mc.getWindow().getFramebufferHeight();
+             float guiScale = (guiH > 0) ? (float) fbH / (float) guiH : 1.0f;
 
-            ensureTextureDimensions();
-            int texW = cachedTexW;
-            int texH = cachedTexH;
+             ensureTextureDimensions();
+             int texW = cachedTexW;
+             int texH = cachedTexH;
 
-            // k = physical screen height / texture height
-            float k = (float) fbH / (float) texH;
-            // Desired size in GUI units preserving aspect ratio, height fills screen
-            int destW = Math.max(1, Math.round((texW * k) / guiScale));
-            int destX = (guiW - destW) / 2;
+             // k = physical screen height / texture height
+             float k = (float) fbH / (float) texH;
+             // Desired size in GUI units preserving aspect ratio, height fills screen
+             int destW = Math.max(1, Math.round((texW * k) / guiScale));
+             int destX = (guiW - destW) / 2;
 
-            drawContext.enableScissor(0, 0, guiW, guiH);
+             drawContext.enableScissor(0, 0, guiW, guiH);
 
-            int color = applyAlphaToColor(0xFFFFFFFF, alpha);
-            drawContext.drawTexture(pipeline, BACKGROUND_TEXTURE,
-                    destX, 0,
-                    0f, 0f,
-                    destW, guiH,
-                    destW, guiH,
-                    color);
+             float a = Math.max(0.0f, Math.min(1.0f, alpha));
+             RenderSystem.enableBlend();
+             RenderSystem.defaultBlendFunc();
+             RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, a);
+             drawContext.drawTexture(BACKGROUND_TEXTURE, destX, 0, destW, guiH, 0.0f, 0.0f, texW, texH, texW, texH);
+             RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
 
-            drawContext.disableScissor();
-        } catch (Exception e) {
-            int bgColor = applyAlphaToColor(0xCC000000, alpha);
-            drawContext.fill(0, 0, this.width, this.height, bgColor);
-        }
-    }
+             drawContext.disableScissor();
+         } catch (Exception e) {
+             int bgColor = applyAlphaToColor(0xCC000000, alpha);
+             drawContext.fill(0, 0, this.width, this.height, bgColor);
+         }
+     }
 
     // modified: accept alpha and pass color through
     private void drawEntryHead(DrawContext drawContext, String icon, int x, int y, int size, float alpha) {
@@ -481,7 +489,7 @@ public class DialogueHistoryScreen extends Screen {
         String resolvedIcon = icon;
         if ("@s".equals(icon)) {
             if (mc.player != null && mc.player.getGameProfile() != null) {
-                try { resolvedIcon = mc.player.getGameProfile().name(); } catch (Throwable t) { resolvedIcon = mc.player.getName().getString(); }
+                try { resolvedIcon = mc.player.getGameProfile().getName(); } catch (Throwable t) { resolvedIcon = mc.player.getName().getString(); }
             } else {
                 resolvedIcon = null;
             }
@@ -492,9 +500,6 @@ public class DialogueHistoryScreen extends Screen {
             Identifier customTex = CustomIconCache.getIconTextureId(icon);
             if (customTex != null) {
                 drawTex(drawContext, customTex, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
-                if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                    try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=CUSTOM"); } catch (Throwable ignored) {}
-                }
                 return;
             }
             drawTex(drawContext, MissingTextureHelper.getTextureId(), x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
@@ -504,42 +509,38 @@ public class DialogueHistoryScreen extends Screen {
         // Prefer resolvedIcon (e.g. when icon == "@s") for skin lookup
         boolean isLocalPlayerIcon = false;
         if (mc.player != null && resolvedIcon != null) {
-            try { isLocalPlayerIcon = resolvedIcon.equals(mc.player.getGameProfile().name()); } catch (Throwable ignored) {}
+            try { isLocalPlayerIcon = resolvedIcon.equals(mc.player.getGameProfile().getName()); } catch (Throwable ignored) {}
         }
 
         if (isLocalPlayerIcon) {
-            Identifier localHead = SkinCache.getHeadTextureId(resolvedIcon);
-            if (localHead != null) {
-                drawTex(drawContext, localHead, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
-                if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                    try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=SKINCACHE (local)"); } catch (Throwable ignored) {}
-                }
-                return;
-            }
-            if (mc.getNetworkHandler() != null) {
-                PlayerListEntry le = mc.getNetworkHandler().getPlayerListEntry(resolvedIcon);
-                if (le != null) {
-                    SkinTextures st = le.getSkinTextures();
-                    if (st != null) {
-                        int colorArgb = applyAlphaToColor(0xFFFFFFFF, alpha);
-                        PlayerSkinDrawer.draw(drawContext, st, x, y, size, colorArgb);
-                        if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                            try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=PLAYERLIST (local)"); } catch (Throwable ignored) {}
-                        }
-                        return;
+            // Try to register head from in-memory PlayerListEntry (SkinRestorer case)
+            try {
+                if (mc.getNetworkHandler() != null) {
+                    PlayerListEntry pleTry = mc.getNetworkHandler().getPlayerListEntry(resolvedIcon);
+                    if (pleTry != null) {
+                        try { SkinCache.tryRegisterHeadFromPlayerListEntry(pleTry, resolvedIcon); } catch (Throwable ignored) {}
                     }
                 }
+            } catch (Throwable ignored) {}
+
+            Identifier localHead = SkinCache.getHeadTextureId(resolvedIcon);
+            if (localHead != null) {
+                // Prefer the composited SkinCache head first — it guarantees face+overlay and will reflect in-memory changes
+                drawTex(drawContext, localHead, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
+                return;
             }
+
+            // If no composited head available, attempt to request server or use missing texture
+            drawTex(drawContext, MissingTextureHelper.getTextureId(), x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
+            return;
         }
 
         // Try cached head texture next (fast), then fall back to PlayerListEntry
         Identifier headId = null;
         if (resolvedIcon != null) headId = SkinCache.getHeadTextureId(resolvedIcon);
         if (headId != null) {
+            // Prefer composited SkinCache head first — it contains both layers and updates when SkinCache was refreshed
             drawTex(drawContext, headId, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
-            if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=SKINCACHE"); } catch (Throwable ignored) {}
-            }
             return;
         }
 
@@ -548,30 +549,28 @@ public class DialogueHistoryScreen extends Screen {
             if (resolvedIcon != null) entry = mc.getNetworkHandler().getPlayerListEntry(resolvedIcon);
             if (entry == null && icon != null) entry = mc.getNetworkHandler().getPlayerListEntry(icon);
             if (entry != null) {
-                SkinTextures skinTextures = entry.getSkinTextures();
-                if (skinTextures != null) {
-                    int colorArgb = applyAlphaToColor(0xFFFFFFFF, alpha);
-                    PlayerSkinDrawer.draw(drawContext, skinTextures, x, y, size, colorArgb);
-                    if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                        try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=PLAYERLIST"); } catch (Throwable ignored) {}
-                    }
-                    return;
-                }
+                // Avoid using SkinTextures directly; try to register via SkinCache and fall back to missing texture
+                try { SkinCache.tryRegisterHeadFromPlayerListEntry(entry, resolvedIcon != null ? resolvedIcon : icon); } catch (Throwable ignored) {}
+                Identifier hid = SkinCache.getHeadTextureId(resolvedIcon != null ? resolvedIcon : icon);
+                if (hid != null) { drawTex(drawContext, hid, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha)); return; }
             }
         }
 
-        if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-            try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=MISSING"); } catch (Throwable ignored) {}
-        }
         drawTex(drawContext, MissingTextureHelper.getTextureId(), x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
     }
 
     private void drawTex(DrawContext drawContext, Identifier texture, int x, int y, int size, int colorArgb) {
-         try {
-             var pipeline = RenderPipelines.GUI_TEXTURED;
-             drawContext.drawTexture(pipeline, texture, x, y, 0.0f, 0.0f, size, size, size, size, colorArgb);
-         } catch (Exception ignored) {
-         }
+        try {
+            float a = ((colorArgb >> 24) & 0xFF) / 255.0f;
+            float r = ((colorArgb >> 16) & 0xFF) / 255.0f;
+            float g = ((colorArgb >> 8) & 0xFF) / 255.0f;
+            float b = (colorArgb & 0xFF) / 255.0f;
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.setShaderColor(r, g, b, a);
+            drawContext.drawTexture(texture, x, y, 0, 0, size, size, size, size);
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        } catch (Exception ignored) {}
      }
 
     // Apply an alpha multiplier [0..1] to a 32-bit ARGB color

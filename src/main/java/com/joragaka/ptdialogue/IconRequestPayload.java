@@ -1,24 +1,26 @@
 package com.joragaka.ptdialogue;
 
-import net.minecraft.util.Identifier;
+import io.netty.buffer.Unpooled;
 import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.util.Identifier;
 
 /**
  * C2S payload: client requests the server to re-send a specific icon by path.
  */
-public record IconRequestPayload(String path) implements CustomPayload {
-    public static final Id<IconRequestPayload> ID = new Id<>(Identifier.of("ptdialogue", "icon_request"));
+public record IconRequestPayload(String path) {
+    public static final Identifier ID = new Identifier("ptdialogue", "icon_request");
 
-    public static final PacketCodec<PacketByteBuf, IconRequestPayload> CODEC = PacketCodec.of(
-            (payload, buf) -> buf.writeString(payload.path()),
-            buf -> new IconRequestPayload(buf.readString())
-    );
+    public void write(PacketByteBuf buf) {
+        buf.writeString(path == null ? "" : path);
+    }
 
-    @Override
-    public Id<? extends CustomPayload> getId() {
-        return ID;
+    public static IconRequestPayload read(PacketByteBuf buf) {
+        return new IconRequestPayload(buf.readString());
+    }
+
+    public PacketByteBuf toBuf() {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        write(buf);
+        return buf;
     }
 }
-

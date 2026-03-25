@@ -1,8 +1,7 @@
 package com.joragaka.ptdialogue;
 
+import io.netty.buffer.Unpooled;
 import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
 /**
@@ -14,22 +13,26 @@ import net.minecraft.util.Identifier;
  * @param data     raw PNG bytes
  * @param md5      MD5 hash of the data for integrity verification
  */
-public record IconSyncPayload(String path, byte[] data, String md5) implements CustomPayload {
+public record IconSyncPayload(String path, byte[] data, String md5) {
 
-    public static final Id<IconSyncPayload> ID =
-            new Id<>(Identifier.of("ptdialogue", "icon_sync"));
+    public static final Identifier ID = new Identifier("ptdialogue", "icon_sync");
 
-    public static final PacketCodec<PacketByteBuf, IconSyncPayload> CODEC = PacketCodec.of(
-            (payload, buf) -> {
-                buf.writeString(payload.path());
-                buf.writeByteArray(payload.data());
-                buf.writeString(payload.md5());
-            },
-            buf -> new IconSyncPayload(buf.readString(), buf.readByteArray(), buf.readString())
-    );
+    public void write(PacketByteBuf buf) {
+        buf.writeString(path == null ? "" : path);
+        buf.writeByteArray(data == null ? new byte[0] : data);
+        buf.writeString(md5 == null ? "" : md5);
+    }
 
-    @Override
-    public Id<? extends CustomPayload> getId() {
-        return ID;
+    public static IconSyncPayload read(PacketByteBuf buf) {
+        String path = buf.readString();
+        byte[] data = buf.readByteArray();
+        String md5 = buf.readString();
+        return new IconSyncPayload(path, data, md5);
+    }
+
+    public PacketByteBuf toBuf() {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        write(buf);
+        return buf;
     }
 }

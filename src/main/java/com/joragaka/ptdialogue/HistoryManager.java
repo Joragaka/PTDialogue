@@ -5,7 +5,6 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
@@ -29,14 +28,11 @@ public class HistoryManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    /** In-memory cache: playerName (lowercase) → list of entries */
+    /** In-memory cache: playerName (lowercase)  list of entries */
     private static final Map<String, List<HistorySyncPayload.Entry>> cache = new ConcurrentHashMap<>();
 
     public static void register() {
-        // Register S2C payload
-        PayloadTypeRegistry.playS2C().register(HistorySyncPayload.ID, HistorySyncPayload.CODEC);
-
-        // On player join — send their history on the next server tick
+        // On player join  send their history on the next server tick
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayerEntity player = handler.getPlayer();
             server.execute(() -> sendHistoryToPlayer(player, server));
@@ -49,14 +45,14 @@ public class HistoryManager {
      */
     public static void record(ServerPlayerEntity player, MinecraftServer server,
                                String icon, String name, int color, String message, String skinUuid) {
-        String playerName = player.getGameProfile().name();
+        String playerName = player.getGameProfile().getName();
         long ts = System.currentTimeMillis();
         HistorySyncPayload.Entry entry = new HistorySyncPayload.Entry(icon, name, color, message, ts, skinUuid);
 
         // Add to in-memory cache
         List<HistorySyncPayload.Entry> entries = cache.computeIfAbsent(
                 playerName.toLowerCase(), k -> {
-                    // First time — load from disk
+                    // First time  load from disk
                     Path file = getPlayerFile(server, playerName);
                     return new ArrayList<>(loadFromDisk(file));
                 });
@@ -67,36 +63,33 @@ public class HistoryManager {
 
         // Send incremental update to client
         if (!player.isDisconnected()) {
-            ServerPlayNetworking.send(player, new HistorySyncPayload(List.of(entry), false));
+            ServerPlayNetworking.send(player, HistorySyncPayload.ID, new HistorySyncPayload(List.of(entry), false).toBuf());
         }
     }
 
-    // ── Internal ─────────────────────────────────────────────────────────────
+    //  Internal 
 
     private static void sendHistoryToPlayer(ServerPlayerEntity player, MinecraftServer server) {
-        String playerName = player.getGameProfile().name();
+        String playerName = player.getGameProfile().getName();
         Path file = getPlayerFile(server, playerName);
-        System.out.println("[PTDialogue] History file path: " + file.toAbsolutePath());
 
         // Load from disk and put in cache
         List<HistorySyncPayload.Entry> entries = new ArrayList<>(loadFromDisk(file));
         cache.put(playerName.toLowerCase(), entries);
 
-        System.out.println("[PTDialogue] Sending " + entries.size()
-                + " history entries to " + playerName);
         if (entries.isEmpty()) return;
-        ServerPlayNetworking.send(player, new HistorySyncPayload(entries, true));
+        ServerPlayNetworking.send(player, HistorySyncPayload.ID, new HistorySyncPayload(entries, true).toBuf());
     }
 
     private static Path getHistoryDir(MinecraftServer server) {
         // getSavePath(ROOT) returns the world root folder (e.g. saves/WorldName/)
         Path worldRoot = server.getSavePath(WorldSavePath.ROOT).toAbsolutePath().normalize();
-        // ROOT is often "<world>/." — normalize() resolves the dot, giving us the world folder directly
+        // ROOT is often "<world>/."  normalize() resolves the dot, giving us the world folder directly
         return worldRoot.resolve("dialoguehistory");
     }
 
     private static Path getPlayerFile(MinecraftServer server, String playerName) {
-        String safe = playerName.replaceAll("[\\\\/:*?\"<>|]", "_");
+        String safe = playerName.replaceAll("[\\/:*?\"<>|]", "_");
         return getHistoryDir(server).resolve(safe + ".json");
     }
 
@@ -171,7 +164,6 @@ public class HistoryManager {
                             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
                             Files.writeString(tmp, GSON.toJson(root));
                             Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-                            System.out.println("[PTDialogue] Repaired history file: " + file.toAbsolutePath());
                         } catch (Exception ex) {
                             // If atomic move not supported, try non-atomic replace
                             try {
@@ -179,20 +171,15 @@ public class HistoryManager {
                                 Files.writeString(tmp, GSON.toJson(root));
                                 Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                             } catch (Exception ex2) {
-                                System.err.println("[PTDialogue] Failed to rewrite repaired history file: " + ex2.getMessage());
                             }
                         }
 
                     } catch (Exception ex) {
-                        System.err.println("[PTDialogue] Failed to parse repaired history for " + file.getFileName());
                     }
                 } else {
-                    System.err.println("[PTDialogue] Could not recover corrupted history file: " + file.getFileName());
                 }
             }
         } catch (IOException ex) {
-            System.err.println("[PTDialogue] Failed to load history for " + file.getFileName()
-                    + ": " + ex.getMessage());
         }
         return list;
     }
@@ -224,8 +211,6 @@ public class HistoryManager {
                 Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException ex) {
-            System.err.println("[PTDialogue] Failed to save history for " + file.getFileName()
-                    + ": " + ex.getMessage());
         }
     }
 }

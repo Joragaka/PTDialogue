@@ -1,13 +1,10 @@
 package com.joragaka.ptdialogue.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.PlayerSkinDrawer;
 import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.entity.player.SkinTextures;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.OrderedText;
 import net.minecraft.text.Text;
@@ -26,7 +23,8 @@ public class DialogueRenderer {
     // smaller dialogue and large windows get a larger one — independent of GUI scale.
     private static final float TEXT_HEIGHT_FRACTION = 0.025f;
 
-    public static void renderDialogue(DrawContext drawContext, RenderTickCounter renderTickCounter) {
+    // Note: called from HUD callback with a single DrawContext parameter
+    public static void renderDialogue(DrawContext drawContext) {
         // Update dialogue state once per frame
         DialogueManager.tick();
 
@@ -210,7 +208,7 @@ public class DialogueRenderer {
         int textArgb   = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
 
         var matrices = drawContext.getMatrices();
-        matrices.scale(textScale, textScale);
+        matrices.scale(textScale, textScale, 1.0f);
 
         int drawX    = Math.max(0, Math.round(textX      / Math.max(0.001f, textScale)));
         int currentY = Math.max(0, Math.round(textStartY / Math.max(0.001f, textScale)));
@@ -238,7 +236,7 @@ public class DialogueRenderer {
             currentY += unscaledLineSpacing;
         }
 
-        matrices.scale(1.0f / Math.max(0.001f, textScale), 1.0f / Math.max(0.001f, textScale));
+        matrices.scale(1.0f / Math.max(0.001f, textScale), 1.0f / Math.max(0.001f, textScale), 1.0f);
     }
 
     private static void drawPlayerHead(DrawContext drawContext, MinecraftClient client, String icon, int x, int y, int size, float alpha) {
@@ -247,7 +245,7 @@ public class DialogueRenderer {
         if ("@s".equals(icon)) {
             if (client.player != null && client.player.getGameProfile() != null) {
                 // Use raw profile name (unformatted) so SkinCache and player lookup match exact username
-                resolvedIcon = client.player.getGameProfile().name();
+                try { resolvedIcon = client.getSession().getUsername(); } catch (Throwable ignored) { try { resolvedIcon = client.player.getName().getString(); } catch (Throwable ignored2) { resolvedIcon = null; } }
             } else {
                 resolvedIcon = null;
             }
@@ -256,81 +254,98 @@ public class DialogueRenderer {
         if (CustomIconCache.isCustomIcon(icon)) {
             Identifier customTex = CustomIconCache.getIconTextureId(icon);
             if (customTex != null) {
-                drawCustomTexture(drawContext, customTex, x, y, size, size, alpha);
+                drawTexture120(drawContext, customTex, x, y, size, alpha);
                 return;
             }
-            drawCustomTexture(drawContext, MissingTextureHelper.getTextureId(), x, y, size, size, alpha);
+            drawTexture120(drawContext, MissingTextureHelper.getTextureId(), x, y, size, alpha);
             return;
         }
 
         // If resolvedIcon is set (possibly via @s) prefer that for skin lookup
-        // If this icon references the local player, prefer PlayerEntity skinTextures first (most authoritative)
+        // For the local player: prefer PlayerListEntry skin textures if available (ensures immediate update
+        // when the player changes their skin locally), otherwise fall back to SkinCache which uses the
+        // raw PNG composite (guarantees both layers when PlayerListEntry is missing overlay).
         boolean isLocalPlayerIcon = false;
         if (client.player != null && resolvedIcon != null) {
-            try {
-                isLocalPlayerIcon = resolvedIcon.equals(client.player.getGameProfile().name());
-            } catch (Throwable ignored) {
-                // fallback: not critical
-            }
+            try { isLocalPlayerIcon = resolvedIcon.equals(client.player.getGameProfile().getName()); } catch (Throwable ignored) {}
         }
 
-        // Try to draw directly from the local player's SkinCache first (ensure overlay/hat present)
         if (isLocalPlayerIcon) {
-            // Prefer cached composited head (SkinCache) first so hat/overlay always matches
-            Identifier localHead = SkinCache.getHeadTextureId(resolvedIcon);
-            if (localHead != null) {
-                drawCustomTexture(drawContext, localHead, x, y, size, size, alpha);
-                return;
-            }
-            // fallback to playerlist skin textures
-            if (client.getNetworkHandler() != null) {
-                PlayerListEntry localEntry = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
-                if (localEntry != null) {
-                    SkinTextures skinTextures = localEntry.getSkinTextures();
-                    if (skinTextures != null) {
-                        int colorArgb = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
-                        PlayerSkinDrawer.draw(drawContext, skinTextures, x, y, size, colorArgb);
-                        return;
+            // Attempt to register head from in-memory PlayerListEntry texture: covers cases where SkinRestorer
+            // updated the texture in memory but didn't update disk file. This is a best-effort call and
+            // is cheap because it quickly returns if no suitable texture exists.
+            try {
+                if (client.getNetworkHandler() != null) {
+                    PlayerListEntry pleTry = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
+                    if (pleTry != null) {
+                        try { SkinCache.tryRegisterHeadFromPlayerListEntry(pleTry, resolvedIcon); } catch (Throwable ignored) {}
                     }
                 }
-            }
-        }
+            } catch (Throwable ignored) {}
 
-        if (client.getNetworkHandler() != null) {
-            PlayerListEntry localEntry = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
-            if (localEntry != null) {
-                SkinTextures skinTextures = localEntry.getSkinTextures();
-                if (skinTextures != null) {
-                    int colorArgb = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
-                    PlayerSkinDrawer.draw(drawContext, skinTextures, x, y, size, colorArgb);
+            // Prefer SkinCache composited head first (ensures overlay is shown); fall back to PlayerListEntry textures
+            try {
+                Identifier localHead = SkinCache.getHeadTextureId(resolvedIcon);
+                if (localHead != null) {
+                    drawTexture120(drawContext, localHead, x, y, size, alpha);
+                    return;
+                }
+            } catch (Throwable ignored) {}
+
+            // PlayerListEntry fallback (immediate local update)
+            if (client.getNetworkHandler() != null) {
+                PlayerListEntry pleLocal = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
+                if (pleLocal != null) {
+                    // avoid referencing SkinTextures class directly; rely on SkinCache registration
+                    try { SkinCache.tryRegisterHeadFromPlayerListEntry(pleLocal, resolvedIcon); } catch (Throwable ignored) {}
+                    Identifier hid = SkinCache.getHeadTextureId(resolvedIcon);
+                    if (hid != null) {
+                        drawTexture120(drawContext, hid, x, y, size, alpha);
+                        return;
+                    }
+                    // otherwise show missing texture until SkinCache registers
+                    drawTexture120(drawContext, MissingTextureHelper.getTextureId(), x, y, size, alpha);
                     return;
                 }
             }
+            // If neither is available — fall through and try other sources below
         }
 
-        // Next try cached head texture (faster) and then PlayerListEntry fallback for non-local names
+        // Try PlayerListEntry skin textures for non-local icons (or if local fallback above didn't find anything)
+        if (client.getNetworkHandler() != null) {
+            PlayerListEntry ple = null;
+            if (resolvedIcon != null) ple = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
+            if (ple == null && icon != null) ple = client.getNetworkHandler().getPlayerListEntry(icon);
+            if (ple != null) {
+                String pleKey = resolvedIcon != null ? resolvedIcon : icon;
+                // Check cache first — avoid expensive reflection every frame when head is already registered
+                Identifier hid = pleKey != null ? SkinCache.getHeadTextureId(pleKey) : null;
+                if (hid != null) {
+                    drawTexture120(drawContext, hid, x, y, size, alpha);
+                    return;
+                }
+                try { SkinCache.tryRegisterHeadFromPlayerListEntry(ple, pleKey); } catch (Throwable ignored) {}
+                hid = pleKey != null ? SkinCache.getHeadTextureId(pleKey) : null;
+                if (hid != null) {
+                    drawTexture120(drawContext, hid, x, y, size, alpha);
+                    return;
+                }
+                // If SkinCache doesn't have it yet, show missing (will be replaced when SkinCache registers)
+                drawTexture120(drawContext, MissingTextureHelper.getTextureId(), x, y, size, alpha);
+                return;
+            }
+        }
+
+
+        // Next try cached head texture (faster) and then fallback to missing
         Identifier headId = null;
         if (resolvedIcon != null) headId = SkinCache.getHeadTextureId(resolvedIcon);
         if (headId != null) {
-            drawCustomTexture(drawContext, headId, x, y, size, size, alpha);
+            drawTexture120(drawContext, headId, x, y, size, alpha);
             return;
         }
 
-        if (client.getNetworkHandler() != null) {
-            PlayerListEntry entry = null;
-            if (resolvedIcon != null) entry = client.getNetworkHandler().getPlayerListEntry(resolvedIcon);
-            if (entry == null && icon != null) entry = client.getNetworkHandler().getPlayerListEntry(icon);
-            if (entry != null) {
-                SkinTextures skinTextures = entry.getSkinTextures();
-                if (skinTextures != null) {
-                    int colorArgb = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
-                    PlayerSkinDrawer.draw(drawContext, skinTextures, x, y, size, colorArgb);
-                    return;
-                }
-            }
-        }
-
-        drawCustomTexture(drawContext, MissingTextureHelper.getTextureId(), x, y, size, size, alpha);
+        drawTexture120(drawContext, MissingTextureHelper.getTextureId(), x, y, size, alpha);
     }
 
     private static void drawSemiTransparentBox(DrawContext drawContext, int x, int y, int width, int height, float runtimeAlpha) {
@@ -340,26 +355,25 @@ public class DialogueRenderer {
     }
 
     /**
-     * Draw a custom texture using DrawContext.drawTexture with the GUI_TEXTURED pipeline.
-     * Direct import of RenderPipelines ensures Loom remaps the reference correctly
-     * in both dev (yarn) and production (intermediary) environments.
-     * No Class.forName, no reflection — just a normal Java reference.
+     * Draw a texture compatible with Minecraft 1.20.1.
+     * Uses RenderSystem.setShaderColor for alpha control.
      */
-    private static void drawCustomTexture(DrawContext drawContext, Identifier texture, int x, int y, int width, int height, float alpha) {
+    private static void drawTexture120(DrawContext drawContext, Identifier texture, int x, int y, int size, float alpha) {
         try {
-            int colorArgb = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
-            var pipeline = RenderPipelines.GUI_TEXTURED;
-            drawContext.drawTexture(pipeline, texture, x, y, 0.0f, 0.0f, width, height, width, height, colorArgb);
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, Math.max(0.0f, Math.min(1.0f, alpha)));
+            drawContext.drawTexture(texture, x, y, 0, 0, size, size, size, size);
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         } catch (Exception e) {
-            // Fallback: checkerboard (should never happen now)
             int alphaInt = (int)(alpha * 255);
             int black   = alphaInt << 24;
             int magenta = (alphaInt << 24) | 0xF800F8;
-            int half = Math.max(width / 2, 1);
+            int half = Math.max(size / 2, 1);
             drawContext.fill(x, y, x + half, y + half, black);
-            drawContext.fill(x + half, y, x + width, y + half, magenta);
-            drawContext.fill(x, y + half, x + half, y + height, magenta);
-            drawContext.fill(x + half, y + half, x + width, y + height, black);
+            drawContext.fill(x + half, y, x + size, y + half, magenta);
+            drawContext.fill(x, y + half, x + half, y + size, magenta);
+            drawContext.fill(x + half, y + half, x + size, y + size, black);
         }
     }
 }

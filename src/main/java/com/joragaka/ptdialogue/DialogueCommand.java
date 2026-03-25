@@ -5,7 +5,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.entity.player.PlayerEntity;
@@ -48,9 +47,6 @@ public class DialogueCommand {
     }
 
     public static void register() {
-        // Регистрируем payload тип для S2C
-        PayloadTypeRegistry.playS2C().register(DialoguePayload.ID, DialoguePayload.CODEC);
-
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             // /dialogue <targets> <icon> <name> <colorname> <message...>
             dispatcher.register(
@@ -83,8 +79,6 @@ public class DialogueCommand {
         String colorname = StringArgumentType.getString(context, "colorname");
         String message   = StringArgumentType.getString(context, "message");
 
-        // Убрана прежняя валидация, теперь имя может содержать кириллицу и быть в кавычках
-
         for (PlayerEntity player : targets) {
             if (player instanceof ServerPlayerEntity serverPlayer) {
                 // Normalize icon (strip surrounding quotes) but do NOT expand @s here.
@@ -102,7 +96,7 @@ public class DialogueCommand {
                     nameToSend = nameToSend.substring(1, nameToSend.length() - 1);
                 }
                 if ("@s".equals(nameToSend)) {
-                    try { nameToSend = serverPlayer.getGameProfile().name(); } catch (Throwable ignored) { nameToSend = ""; }
+                    try { nameToSend = serverPlayer.getGameProfile().getName(); } catch (Throwable ignored) { nameToSend = ""; }
                 }
 
                 // Determine skin UUID to send when icon == @s
@@ -114,18 +108,18 @@ public class DialogueCommand {
                 // If icon is @s and the server has a cached head PNG for this player, send it first
                 if ("@s".equals(iconToSend)) {
                     try {
-                        String targetKey = serverPlayer.getGameProfile().name().toLowerCase();
+                        String targetKey = serverPlayer.getGameProfile().getName().toLowerCase();
                         if (IconSyncManager.hasHead(targetKey)) {
                             IconSyncManager.sendHeadToPlayer(targetKey, serverPlayer);
                         } else {
                             // Trigger background caching (non-blocking)
-                            IconSyncManager.ensureHeadCached(serverPlayer.getGameProfile().name(), context.getSource().getServer());
+                            IconSyncManager.ensureHeadCached(serverPlayer.getGameProfile().getName(), context.getSource().getServer());
                         }
                     } catch (Throwable ignored) {}
                 }
 
                 // Send raw icon (may be "@s") and optional skinUuid
-                ServerPlayNetworking.send(serverPlayer, new DialoguePayload(iconToSend, nameToSend, colorname, message, skinUuid));
+                ServerPlayNetworking.send(serverPlayer, DialoguePayload.ID, new DialoguePayload(iconToSend, nameToSend, colorname, message, skinUuid).toBuf());
                 // Save raw icon into history; include skinUuid so clients can request exact skin
                 HistoryManager.record(serverPlayer, context.getSource().getServer(),
                         iconToSend, nameToSend, parseColor(colorname), message, skinUuid);

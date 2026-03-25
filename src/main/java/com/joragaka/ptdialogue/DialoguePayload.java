@@ -1,35 +1,38 @@
 package com.joragaka.ptdialogue;
 
+import io.netty.buffer.Unpooled;
 import net.minecraft.network.PacketByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
-public record DialoguePayload(String icon, String name, String colorname, String message, String skinUuid) implements CustomPayload {
+/**
+ * Server->Client payload: dialogue message.
+ * Используем ручную сериализацию через PacketByteBuf для Fabric 1.20.1.
+ */
+public record DialoguePayload(String icon, String name, String colorname, String message, String skinUuid) {
 
-    public static final CustomPayload.Id<DialoguePayload> ID = new CustomPayload.Id<>(Identifier.of("ptdialogue", "dialogue"));
+    public static final Identifier ID = new Identifier("ptdialogue", "dialogue");
 
-    public static final PacketCodec<PacketByteBuf, DialoguePayload> CODEC = PacketCodec.of(
-        (payload, buf) -> {
-            buf.writeString(payload.icon());
-            buf.writeString(payload.name());
-            buf.writeString(payload.colorname());
-            buf.writeString(payload.message());
-            buf.writeString(payload.skinUuid() == null ? "" : payload.skinUuid());
-        },
-        buf -> {
-            String icon = buf.readString();
-            String name = buf.readString();
-            String colorname = buf.readString();
-            String message = buf.readString();
-            String skin = buf.readString();
-            String skinUuid = (skin == null || skin.isEmpty()) ? null : skin;
-            return new DialoguePayload(icon, name, colorname, message, skinUuid);
-        }
-    );
+    public void write(PacketByteBuf buf) {
+        buf.writeString(icon == null ? "" : icon);
+        buf.writeString(name == null ? "" : name);
+        buf.writeString(colorname == null ? "" : colorname);
+        buf.writeString(message == null ? "" : message);
+        buf.writeString(skinUuid == null ? "" : skinUuid);
+    }
 
-    @Override
-    public Id<? extends CustomPayload> getId() {
-        return ID;
+    public static DialoguePayload read(PacketByteBuf buf) {
+        String icon = buf.readString();
+        String name = buf.readString();
+        String colorname = buf.readString();
+        String message = buf.readString();
+        String skin = buf.readString();
+        String skinUuid = (skin == null || skin.isEmpty()) ? null : skin;
+        return new DialoguePayload(icon, name, colorname, message, skinUuid);
+    }
+
+    public PacketByteBuf toBuf() {
+        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+        write(buf);
+        return buf;
     }
 }

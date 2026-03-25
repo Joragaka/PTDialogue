@@ -2,17 +2,18 @@ package com.joragaka.ptdialogue.client;
 
 import com.joragaka.ptdialogue.IconSyncPayload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.network.PacketByteBuf;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.util.Identifier;
 
 /**
  * Client-side handler for icon/head sync packets from the server.
- * Saves received PNGs to disk and registers them as GPU textures.
- * Protects server-synced files from client-side modification by verifying MD5 hashes.
  */
 public class IconSyncHandler {
 
@@ -23,14 +24,18 @@ public class IconSyncHandler {
     private static final long REQUEST_COOLDOWN_MS = 5_000;
 
     public static void register() {
-        ClientPlayNetworking.registerGlobalReceiver(IconSyncPayload.ID, (payload, context) -> {
-            String path = payload.path();
-            byte[] data = payload.data();
-            String md5 = payload.md5();
-
-            context.client().execute(() -> handleIconSync(path, data, md5));
+        ClientPlayNetworking.registerGlobalReceiver(IconSyncPayload.ID, (client, handler, buf, responseSender) -> {
+            try {
+                PacketByteBuf pbuf = new PacketByteBuf(buf);
+                IconSyncPayload payload = IconSyncPayload.read(pbuf);
+                String path = payload.path();
+                byte[] data = payload.data();
+                String md5 = payload.md5();
+                client.execute(() -> handleIconSync(path, data, md5));
+            } catch (Throwable t) {
+                // ignore
+            }
         });
-        // Register C2S request sender (nothing to register for receiving - requests are sent)
     }
 
     /**
@@ -46,9 +51,11 @@ public class IconSyncHandler {
 
             var client = net.minecraft.client.MinecraftClient.getInstance();
             if (client == null || client.getNetworkHandler() == null) return;
-            net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
-                    new com.joragaka.ptdialogue.IconRequestPayload(key));
-            System.out.println("[ptdialogue] Requested icon from server: " + key);
+            try {
+                net.minecraft.network.PacketByteBuf buf = new net.minecraft.network.PacketByteBuf(io.netty.buffer.Unpooled.buffer());
+                new com.joragaka.ptdialogue.IconRequestPayload(key).write(buf);
+                ClientPlayNetworking.send(com.joragaka.ptdialogue.IconRequestPayload.ID, buf);
+            } catch (Throwable ignored) {}
         } catch (Throwable t) {
             // best-effort
         }
@@ -63,8 +70,21 @@ public class IconSyncHandler {
                 handleCustomIconSync(path, data, md5);
             }
         } catch (Exception e) {
-            System.err.println("[ptdialogue] IconSync failed for '" + path + "': " + e.getMessage());
         }
+    }
+
+    /**
+     * Handle a player head texture synced from server.
+     * Receives raw skin PNG, composites head client-side, saves and registers.
+     */
+    private static void handleHeadSync(String path, byte[] data) {
+        // path format: ".heads/playername.png"
+        String nick = path.substring(".heads/".length()).replace(".png", "").toLowerCase();
+
+        // Use SkinCache to composite and register the head
+        try {
+            SkinCache.compositeAndRegisterHead(nick, data);
+        } catch (Throwable ignored) {}
     }
 
     /**
@@ -77,7 +97,6 @@ public class IconSyncHandler {
 
         // Validate path doesn't escape icons directory
         if (!targetFile.normalize().startsWith(iconsDir.normalize())) {
-            System.err.println("[ptdialogue] Rejected icon sync with suspicious path: " + relativePath);
             return;
         }
 
@@ -99,20 +118,6 @@ public class IconSyncHandler {
         // Load texture directly from the byte data (instant, no disk re-read needed)
         CustomIconCache.evictAndReloadFromBytes(relativePath, data);
 
-        System.out.println("[ptdialogue] Synced icon from server: " + relativePath);
-    }
-
-    /**
-     * Handle a player head texture synced from server.
-     * Receives raw skin PNG, composites head client-side, saves and registers.
-     */
-    private static void handleHeadSync(String path, byte[] data) {
-        // path format: ".heads/playername.png"
-        String nick = path.substring(".heads/".length()).replace(".png", "").toLowerCase();
-
-        // Use SkinCache to composite and register the head
-        SkinCache.compositeAndRegisterHead(nick, data);
-        System.out.println("[ptdialogue] Synced head from server: " + nick);
     }
 
     /**

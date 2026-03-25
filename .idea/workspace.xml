@@ -4,12 +4,31 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="@s icon image modifier, + optimisation fixes">
+    <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="scroll wheel removed">
+      <change afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DebugUtils.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/runConfigurations/Minecraft_Server.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/runConfigurations/Minecraft_Server.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/build.gradle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gradle.properties" beforeDir="false" afterPath="$PROJECT_DIR$/gradle.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/CustomIconCache.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/CustomIconCache.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueClientConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueClientConfig.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialoguePacketHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialoguePacketHandler.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/IconSyncHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/IconSyncHandler.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/MissingTextureHelper.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/MissingTextureHelper.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/ptdialogueClient.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/ptdialogueClient.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/resources/ptdialogue.client.mixins.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/resources/ptdialogue.client.mixins.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialoguePayload.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialoguePayload.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistorySyncPayload.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistorySyncPayload.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconRequestPayload.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconRequestPayload.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncPayload.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncPayload.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/ptdialogue.mixins.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/ptdialogue.mixins.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -43,6 +62,7 @@
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+    <option name="UPDATE_TYPE" value="REBASE" />
   </component>
   <component name="GitHubPullRequestSearchHistory">{
   &quot;lastFilter&quot;: {
@@ -60,24 +80,27 @@
   &quot;associatedIndex&quot;: 0
 }</component>
   <component name="ProjectId" id="3B8QUw0ONfxdWzKPFJzKvdcrX2L" />
+  <component name="ProjectLevelVcsManager">
+    <OptionsSetting value="false" id="Update" />
+  </component>
   <component name="ProjectViewState">
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Gradle.D:/MPROJECTS/PtLoreThing [wrapper].executor&quot;: &quot;Run&quot;,
-    &quot;Gradle.ptlorething [build].executor&quot;: &quot;Run&quot;,
-    &quot;Gradle.ptlorething [runClient].executor&quot;: &quot;Run&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;D:/MPROJECTS/PTDialogue&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.lookFeel&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Gradle.D:/MPROJECTS/PtLoreThing [wrapper].executor": "Run",
+    "Gradle.ptlorething [build].executor": "Run",
+    "Gradle.ptlorething [runClient].executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "port/minecraft-1.20.1",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "D:/MPROJECTS/PTDialogue",
+    "settings.editor.selected.configurable": "com.anthropic.code.plugin.settings"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="D:\MPROJECTS\PtLoreThing\src\main\resources\assets\ptlorething" />
@@ -142,8 +165,8 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Gradle.ptlorething [runClient]" />
         <item itemvalue="Gradle.ptlorething [build]" />
+        <item itemvalue="Gradle.ptlorething [runClient]" />
       </list>
     </recent_temporary>
   </component>
@@ -227,7 +250,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774277669897</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="scroll wheel removed">
+      <option name="closed" value="true" />
+      <created>1774336461539</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1774336461539</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
@@ -236,6 +267,7 @@
     <MESSAGE value="bug fixes" />
     <MESSAGE value="log spam fix" />
     <MESSAGE value="@s icon image modifier, + optimisation fixes" />
-    <option name="LAST_COMMIT_MESSAGE" value="@s icon image modifier, + optimisation fixes" />
+    <MESSAGE value="scroll wheel removed" />
+    <option name="LAST_COMMIT_MESSAGE" value="scroll wheel removed" />
   </component>
 </project>

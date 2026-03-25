@@ -9,12 +9,10 @@ import java.util.function.Supplier;
 
 /**
  * Generates and caches a black-and-purple checkerboard "missing texture"
- * (identical to the vanilla Minecraft missing texture pattern).
- * Registered once, reused everywhere as a placeholder.
  */
 public class MissingTextureHelper {
 
-    private static final Identifier TEXTURE_ID = Identifier.of("ptdialogue", "missing_texture");
+    private static final Identifier TEXTURE_ID = new Identifier("ptdialogue", "missing_texture");
     private static boolean registered = false;
 
     /**
@@ -43,14 +41,13 @@ public class MissingTextureHelper {
             for (int px = 0; px < size; px++) {
                 // 8x8 checkerboard pattern (each square is 8 pixels)
                 boolean isBlack = ((px / 8) + (py / 8)) % 2 == 0;
-                image.setColorArgb(px, py, isBlack ? black : magenta);
+                // Use reflection-friendly helper if available
+                try { image.setColor(px, py, isBlack ? black : magenta); } catch (Throwable ignored) { try { java.lang.reflect.Method m = image.getClass().getMethod("setColorArgb", int.class, int.class, int.class); m.invoke(image, px, py, isBlack ? black : magenta); } catch (Throwable ignored2) { try { java.lang.reflect.Method m2 = image.getClass().getMethod("setArgb", int.class, int.class, int.class); m2.invoke(image, px, py, isBlack ? black : magenta); } catch (Throwable ignored3) {} } }
             }
         }
 
         MinecraftClient client = MinecraftClient.getInstance();
-        Supplier<String> nameSupplier = () -> "ptdialogue_missing";
-        NativeImageBackedTexture texture = new NativeImageBackedTexture(nameSupplier, image);
+        NativeImageBackedTexture texture = new NativeImageBackedTexture(image);
         client.getTextureManager().registerTexture(TEXTURE_ID, texture);
     }
 }
-

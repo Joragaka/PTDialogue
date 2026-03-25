@@ -3,7 +3,6 @@ package com.joragaka.ptdialogue;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
@@ -40,7 +39,7 @@ public class IconSyncManager {
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     /** Nicknames of players whose heads have been cached on this server */
-    // теперь используем ключи в форме: lowercased-name или uuid
+    // тeперь используем ключи в форме: lowercased-name или uuid
     private static final Set<String> knownPlayers = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     /** Tracks known icon files: relative path → MD5 hash. Used to detect new/changed files. */
@@ -74,18 +73,12 @@ public class IconSyncManager {
     private static volatile boolean DISABLE_SERVER_SYNC = true;
 
     public static void register() {
-        // Register payload types always — client needs these registered to create receivers
-        PayloadTypeRegistry.playS2C().register(IconSyncPayload.ID, IconSyncPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(IconRequestPayload.ID, IconRequestPayload.CODEC);
+        // Register payload types not required server-side when using manual PacketByteBuf serialization
 
         if (DISABLE_SERVER_SYNC) {
-            System.out.println("[PTDialogue] Server-side icon sync DISABLED (emergency). Background tasks won't start.");
         }
 
-        // Server-side logic (join handler, watcher, lifecycle) only when not disabled
         if (!DISABLE_SERVER_SYNC) {
-            // When a player joins, send all icons + all cached heads
-            // Small delay to ensure client networking is fully initialized
             ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
                 ServerPlayerEntity player = handler.getPlayer();
 
@@ -93,12 +86,11 @@ public class IconSyncManager {
                 serverInstance = server;
 
                 // Start periodic icon folder scanner if not already running
-                // start watcher asynchronously (initial snapshot will be built in background)
                 startIconWatcher();
 
                 // Also fetch and cache this player's head if not already done
                 String profileName = null;
-                try { profileName = player.getGameProfile().name(); } catch (Throwable ignored) {}
+                try { profileName = player.getGameProfile().getName(); } catch (Throwable ignored) {}
                 final String displayName = (profileName == null || profileName.isEmpty()) ? player.getName().getString() : profileName;
                 String uuidKey;
                 try { uuidKey = player.getUuid().toString().toLowerCase(); } catch (Throwable ignored) { uuidKey = ""; }
@@ -111,21 +103,17 @@ public class IconSyncManager {
                     fetchAndCacheHead(nameKey, server);
                 }
 
-                // Short server-thread check, then start background preparation + delayed send
                 server.execute(() -> {
                     if (player.isDisconnected()) return;
                     try {
                         boolean hasMod = ServerPlayNetworking.canSend(player, IconSyncPayload.ID);
                         if (!hasMod) {
-                            System.out.println("[PTDialogue] Disconnecting player " + displayName + " — missing PTDialogue mod.");
                             player.networkHandler.disconnect(net.minecraft.text.Text.literal("You must install the PTDialogue mod to join this server."));
                             return;
                         }
                     } catch (Throwable t) {
-                        System.err.println("[PTDialogue] Warning: failed to check client mod presence: " + t.getMessage());
                     }
 
-                    // Start a background task that waits a bit (allow client to initialize) then prepares and sends icons
                     if (AUTO_SEND_ON_JOIN) {
                         CompletableFuture.runAsync(() -> {
                             try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
@@ -133,13 +121,10 @@ public class IconSyncManager {
                             sendAllCachedHeadsAsync(player);
                         }, IO_EXECUTOR);
                     } else {
-                        System.out.println("[PTDialogue] AUTO_SEND_ON_JOIN is disabled — skipping icon/head sync for " + displayName);
                     }
                   });
             });
 
-
-            // Stop the watcher when server stops
             ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
                 stopIconWatcher();
                 serverInstance = null;
@@ -157,12 +142,10 @@ public class IconSyncManager {
             try {
                 collectFilesRecursive(iconsDir, "", toSend);
             } catch (Exception e) {
-                System.err.println("[PTDialogue] Failed to prepare icons for " + player.getGameProfile().name() + ": " + e.getMessage());
                 return;
             }
             List<IconSyncPayload> sendSlice = toSend;
             if (toSend.size() > MAX_ICONS_PER_JOIN) {
-                System.out.println("[PTDialogue] Limiting icons sent on join to " + MAX_ICONS_PER_JOIN + " (available=" + toSend.size() + ")");
                 sendSlice = new ArrayList<>(toSend.subList(0, MAX_ICONS_PER_JOIN));
             }
             MinecraftServer srv = serverInstance;
@@ -174,11 +157,10 @@ public class IconSyncManager {
                     if (player.isDisconnected()) return;
                     for (IconSyncPayload payload : finalSend) {
                         try {
-                            ServerPlayNetworking.send(player, payload);
+                            ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf());
                         } catch (Throwable ignored) {}
                     }
                 } catch (Throwable t) {
-                    System.err.println("[PTDialogue] Failed to send prepared icons to " + player.getGameProfile().name() + ": " + t.getMessage());
                 }
             });
         }, IO_EXECUTOR);
@@ -216,7 +198,6 @@ public class IconSyncManager {
                      toSend.add(new IconSyncPayload(".heads/" + nick + ".png", data, md5));
                  }
              } catch (Exception e) {
-                 System.err.println("[PTDialogue] Failed to prepare cached heads for " + player.getGameProfile().name() + ": " + e.getMessage());
                  return;
              }
             List<IconSyncPayload> sendSlice = toSend;
@@ -228,22 +209,19 @@ public class IconSyncManager {
                 try {
                     if (player.isDisconnected()) return;
                     for (IconSyncPayload payload : finalSend) {
-                        try { ServerPlayNetworking.send(player, payload); } catch (Throwable ignored) {}
+                        try { ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf()); } catch (Throwable ignored) {}
                     }
                 } catch (Throwable t) {
-                    System.err.println("[PTDialogue] Failed to send prepared cached heads to " + player.getGameProfile().name() + ": " + t.getMessage());
                 }
             });
         }, IO_EXECUTOR);
     }
 
-    // ─────────────────── Periodic icon folder scanning ───────────────────
+    // ─────────────────── Icon folder scanning ───────────────────
 
     private static synchronized void startIconWatcher() {
         if (iconWatcherExecutor != null && !iconWatcherExecutor.isShutdown()) return;
 
-        // Build initial snapshot of known icons
-        // Build initial snapshot asynchronously to avoid blocking server tick
         CompletableFuture.runAsync(() -> buildIconSnapshot(), IO_EXECUTOR);
 
         iconWatcherExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -256,11 +234,9 @@ public class IconSyncManager {
             try {
                 scanForChangedIcons();
             } catch (Exception e) {
-                System.err.println("[PTDialogue] Icon watcher error: " + e.getMessage());
             }
         }, SCAN_INTERVAL_SECONDS, SCAN_INTERVAL_SECONDS, TimeUnit.SECONDS);
 
-        System.out.println("[PTDialogue] Started icon folder watcher (every " + SCAN_INTERVAL_SECONDS + "s)");
     }
 
     private static synchronized void stopIconWatcher() {
@@ -268,7 +244,6 @@ public class IconSyncManager {
             iconWatcherExecutor.shutdownNow();
             iconWatcherExecutor = null;
             knownIconHashes.clear();
-            System.out.println("[PTDialogue] Stopped icon folder watcher");
         }
     }
 
@@ -283,7 +258,6 @@ public class IconSyncManager {
         try {
             collectIconHashes(iconsDir, "", knownIconHashes);
         } catch (Exception e) {
-            System.err.println("[PTDialogue] Failed to build icon snapshot: " + e.getMessage());
         }
     }
 
@@ -350,7 +324,6 @@ public class IconSyncManager {
                 String md5 = computeMd5(data);
                 payloads.add(new IconSyncPayload(relativePath, data, md5));
             } catch (Exception e) {
-                System.err.println("[PTDialogue] Failed to read changed icon '" + relativePath + "': " + e.getMessage());
             }
         }
 
@@ -363,10 +336,9 @@ public class IconSyncManager {
                 for (ServerPlayerEntity player : players) {
                     try {
                         if (player.isDisconnected()) continue;
-                        ServerPlayNetworking.send(player, payload);
+                        ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf());
                     } catch (Throwable ignored) {}
                 }
-                System.out.println("[PTDialogue] Hot-synced icon to all players: " + payload.path() + " (" + payload.data().length + " bytes)");
             }
         });
     }
@@ -380,7 +352,6 @@ public class IconSyncManager {
         try {
             sendDirectoryRecursive(player, iconsDir, "");
         } catch (Exception e) {
-            System.err.println("[PTDialogue] Failed to send icons to " + player.getGameProfile().name() + ": " + e.getMessage());
         }
     }
 
@@ -398,8 +369,7 @@ public class IconSyncManager {
                     String relativePath = prefix.isEmpty() ? fileName : prefix + "/" + fileName;
                     byte[] data = Files.readAllBytes(entry);
                     String md5 = computeMd5(data);
-                    ServerPlayNetworking.send(player, new IconSyncPayload(relativePath, data, md5));
-                    System.out.println("[PTDialogue] Sent icon to client: " + relativePath + " (" + data.length + " bytes)");
+                    ServerPlayNetworking.send(player, IconSyncPayload.ID, new IconSyncPayload(relativePath, data, md5).toBuf());
                 }
             }
         }
@@ -414,12 +384,10 @@ public class IconSyncManager {
                 String nick = headFile.getFileName().toString().replace(".png", "");
                 byte[] data = Files.readAllBytes(headFile);
                 String md5 = computeMd5(data);
-                // Heads are synced with a special prefix so client knows it's a head
                 ServerPlayNetworking.send(player,
-                        new IconSyncPayload(".heads/" + nick + ".png", data, md5));
+                        IconSyncPayload.ID, new IconSyncPayload(".heads/" + nick + ".png", data, md5).toBuf());
             }
         } catch (Exception e) {
-            System.err.println("[PTDialogue] Failed to send cached heads to " + player.getGameProfile().name() + ": " + e.getMessage());
         }
     }
 
@@ -434,6 +402,17 @@ public class IconSyncManager {
             broadcastHead(key, server);
             return;
         }
+
+        // If player is currently online on this server, try extracting skin URL from their GameProfile properties
+        try {
+            ServerPlayerEntity online = server.getPlayerManager().getPlayer(playerName);
+            if (online != null) {
+                if (trySaveSkinFromPlayerProfile(online, skinFile)) {
+                    server.execute(() -> broadcastHead(key, server));
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {}
 
         // Fetch from Mojang API async
         CompletableFuture.runAsync(() -> {
@@ -474,13 +453,11 @@ public class IconSyncManager {
                 Files.createDirectories(skinFile.getParent());
                 Files.write(skinFile, skinPng);
 
-                System.out.println("[PTDialogue] Cached skin for head: " + playerName);
 
                 // Step 5: Broadcast to all online players
                 server.execute(() -> broadcastHead(key, server));
 
             } catch (Exception e) {
-                System.err.println("[PTDialogue] Failed to fetch head for " + playerName + ": " + e.getMessage());
             }
         }, IO_EXECUTOR);
     }
@@ -489,7 +466,6 @@ public class IconSyncManager {
         Path headFile = getHeadsDir().resolve(key + ".png");
         if (!Files.exists(headFile)) return;
 
-        // Read file in IO executor, then schedule sending on server thread
         CompletableFuture.runAsync(() -> {
             try {
                 byte[] data = Files.readAllBytes(headFile);
@@ -499,14 +475,12 @@ public class IconSyncManager {
                 server.execute(() -> {
                     try {
                         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                            try { ServerPlayNetworking.send(player, payload); } catch (Throwable ignored) {}
+                            try { ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf()); } catch (Throwable ignored) {}
                         }
                     } catch (Throwable t) {
-                        System.err.println("[PTDialogue] Failed to broadcast head on server thread: " + t.getMessage());
                     }
                 });
             } catch (Exception e) {
-                System.err.println("[PTDialogue] Failed to read head file for broadcast: " + e.getMessage());
             }
         }, IO_EXECUTOR);
     }
@@ -535,11 +509,10 @@ public class IconSyncManager {
                     var srv = serverInstance;
                     if (srv == null) return;
                     srv.execute(() -> {
-                        try { ServerPlayNetworking.send(player, payload); } catch (Throwable ignored) {}
+                        try { ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf()); } catch (Throwable ignored) {}
                     });
                 } catch (Throwable ignored) {}
             } catch (Exception e) {
-                System.err.println("[PTDialogue] Failed to prepare head for player: " + e.getMessage());
             }
         }, IO_EXECUTOR);
     }
@@ -549,9 +522,9 @@ public class IconSyncManager {
         if (playerName == null || playerName.isEmpty() || server == null) return;
         String key = playerName.toLowerCase();
         if (hasHead(key)) return;
-        // fetchAndCacheHead is async and will broadcast when done
         fetchAndCacheHead(playerName, server);
     }
+
     // ─────────────────── Head compositing ───────────────────
 
     private static String extractSkinUrl(String profileJson) {
@@ -569,7 +542,6 @@ public class IconSyncManager {
                 }
             }
         } catch (Exception e) {
-            System.err.println("[PTDialogue] Failed to parse skin URL: " + e.getMessage());
         }
         return null;
     }
@@ -609,7 +581,7 @@ public class IconSyncManager {
             if (!uuidKey.isBlank()) return uuidKey;
         } catch (Throwable ignored) {}
         try {
-            String name = player.getGameProfile().name();
+            String name = player.getGameProfile().getName();
             if (name != null && !name.isBlank()) return name.toLowerCase();
         } catch (Throwable ignored) {}
         return "";
@@ -669,11 +641,108 @@ public class IconSyncManager {
                 Files.createDirectories(skinFile.getParent());
                 Files.write(skinFile, skinPng);
 
-                System.out.println("[PTDialogue] Cached skin for uuid head: " + uuid32);
                 server.execute(() -> broadcastHead(key, server));
             } catch (Exception e) {
-                System.err.println("[PTDialogue] Failed to fetch head for uuid " + uuid32 + ": " + e.getMessage());
             }
         }, IO_EXECUTOR);
     }
+
+    // Attempt to save a skin by downloading the texture URL from the player's profile properties (for online players)
+    private static boolean trySaveSkinFromPlayerProfile(ServerPlayerEntity player, Path outputFile) {
+        try {
+            Object gp = player.getGameProfile();
+            if (gp == null) return false;
+
+            Object propertiesObj = null;
+            // Try several possible accessor names reflectively
+            String[] tryNames = new String[] {"getProperties", "properties", "getPropertyMap", "getPropertySet"};
+            for (String mname : tryNames) {
+                try {
+                    var m = gp.getClass().getMethod(mname);
+                    propertiesObj = m.invoke(gp);
+                    if (propertiesObj != null) break;
+                } catch (NoSuchMethodException ignored) {}
+            }
+
+            if (propertiesObj == null) {
+                // Try field access
+                try {
+                    var f = gp.getClass().getField("properties");
+                    propertiesObj = f.get(gp);
+                } catch (NoSuchFieldException ignored) {}
+            }
+
+            if (propertiesObj == null) return false;
+
+            // Normalize to an iterable of property objects
+            java.util.Collection<?> propsCollection = null;
+            if (propertiesObj instanceof java.util.Map) {
+                propsCollection = ((java.util.Map<?,?>)propertiesObj).values();
+            } else {
+                try {
+                    var valuesM = propertiesObj.getClass().getMethod("values");
+                    Object vals = valuesM.invoke(propertiesObj);
+                    if (vals instanceof java.util.Collection) propsCollection = (java.util.Collection<?>) vals;
+                } catch (NoSuchMethodException ignored) {}
+            }
+
+            if (propsCollection == null) {
+                if (propertiesObj instanceof java.lang.Iterable) {
+                    java.util.ArrayList<Object> tmp = new java.util.ArrayList<>();
+                    for (Object o : (java.lang.Iterable<?>)propertiesObj) tmp.add(o);
+                    propsCollection = tmp;
+                }
+            }
+
+            if (propsCollection == null || propsCollection.isEmpty()) return false;
+
+            for (Object prop : propsCollection) {
+                if (prop == null) continue;
+                String name = null;
+                String value = null;
+                try {
+                    var gm = prop.getClass().getMethod("getName");
+                    name = (String) gm.invoke(prop);
+                } catch (NoSuchMethodException ignored) {
+                    try {
+                        var gm = prop.getClass().getMethod("name");
+                        name = (String) gm.invoke(prop);
+                    } catch (NoSuchMethodException ignored2) {}
+                }
+                try {
+                    var gm2 = prop.getClass().getMethod("getValue");
+                    value = (String) gm2.invoke(prop);
+                } catch (NoSuchMethodException ignored) {
+                    try {
+                        var gm2 = prop.getClass().getMethod("value");
+                        value = (String) gm2.invoke(prop);
+                    } catch (NoSuchMethodException ignored2) {}
+                }
+                if (name == null || value == null) continue;
+                if (!"textures".equals(name)) continue;
+
+                // decode and extract skin URL as before
+                try {
+                    String decoded = new String(java.util.Base64.getDecoder().decode(value));
+                    JsonObject textures = JsonParser.parseString(decoded).getAsJsonObject().getAsJsonObject("textures");
+                    if (textures != null && textures.has("SKIN")) {
+                        String url = textures.getAsJsonObject("SKIN").get("url").getAsString();
+                        HttpResponse<byte[]> response = HTTP.send(
+                                HttpRequest.newBuilder().uri(URI.create(url)).timeout(TIMEOUT).GET().build(),
+                                HttpResponse.BodyHandlers.ofByteArray());
+                        if (response.statusCode() == 200) {
+                            byte[] skinPng = response.body();
+                            Files.createDirectories(outputFile.getParent());
+                            Files.write(outputFile, skinPng);
+                            return true;
+                        }
+                    }
+                } catch (Exception e) {
+                }
+            }
+        } catch (Exception e) {
+        }
+        return false;
+    }
+
 }

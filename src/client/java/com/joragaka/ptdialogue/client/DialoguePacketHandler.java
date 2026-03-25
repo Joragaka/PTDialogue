@@ -7,6 +7,8 @@ import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import com.joragaka.ptdialogue.DialoguePayload;
 import com.joragaka.ptdialogue.HistorySyncPayload;
+import net.minecraft.util.Identifier;
+import net.minecraft.network.PacketByteBuf;
 
 import java.util.Map;
 
@@ -33,7 +35,10 @@ public class DialoguePacketHandler {
 
     public static void register() {
         // Получение диалога — показываем на экране (история хранится на сервере)
-        ClientPlayNetworking.registerGlobalReceiver(DialoguePayload.ID, (payload, context) -> {
+        ClientPlayNetworking.registerGlobalReceiver(DialoguePayload.ID, (client, handler, buf, responseSender) -> {
+            PacketByteBuf pbuf = new PacketByteBuf(buf);
+            DialoguePayload payload = DialoguePayload.read(pbuf);
+
             final String icon = normalizeIcon(payload.icon());
             final String name = payload.name();
             final String colorname = payload.colorname();
@@ -41,19 +46,20 @@ public class DialoguePacketHandler {
             final String skinUuid = payload.skinUuid();
 
             // Defer preload to client thread so we can resolve @s -> local player name safely
-            context.client().execute(() -> {
-                // Preload skin: if icon is "@s", preload local player's skin; otherwise preload the icon directly
+            client.execute(() -> {
                 try {
                     if ("@s".equals(icon)) {
-                        // Prefer server-provided skinUuid if available
                         if (skinUuid != null && !skinUuid.isEmpty()) {
                             SkinCache.preload(skinUuid);
                         } else {
-                            var mc = context.client();
+                            var mc = client;
                             if (mc.player != null && mc.player.getGameProfile() != null) {
                                 String local = null;
-                                try { local = mc.player.getGameProfile().name(); } catch (Throwable t) { local = mc.player.getName().getString(); }
-                                if (local != null) SkinCache.preload(local);
+                                try { local = mc.player.getGameProfile().getName(); } catch (Throwable t) { local = mc.player.getName().getString(); }
+                                if (local != null) {
+                                    SkinCache.preload(local);
+                                    try { SkinCache.forceRefresh(local); } catch (Throwable ignored) {}
+                                }
                             }
                         }
                     } else {
@@ -65,14 +71,12 @@ public class DialoguePacketHandler {
                 Text messageText = parseJsonToText(message);
                 if (messageText != null) {
                     DialogueManager.showDialogue(icon, name, nameColor, messageText);
-                    // If icon is @s, ensure local player's head texture is available; if not, request it and re-show when ready
                     if ("@s".equals(icon)) {
                         try {
-                            var mc = context.client();
-                            // prefer server-provided UUID if present
+                            var mc = client;
                             String uuidToUse = (skinUuid != null && !skinUuid.isEmpty()) ? skinUuid : null;
                             if (uuidToUse == null && mc.player != null) {
-                                try { uuidToUse = mc.player.getGameProfile().name(); } catch (Throwable t) { uuidToUse = mc.player.getName().getString(); }
+                                try { uuidToUse = mc.player.getGameProfile().getName(); } catch (Throwable t) { uuidToUse = mc.player.getName().getString(); }
                             }
                             if (uuidToUse != null) {
                                 final String fUuid = uuidToUse;
@@ -85,6 +89,18 @@ public class DialoguePacketHandler {
                                         try { mc.execute(() -> DialogueManager.showDialogue(fIcon, fName, fColor, fMsg)); } catch (Throwable ignored) {}
                                     }
                                 });
+
+                                try {
+                                    Identifier check = SkinCache.getHeadTextureId(fUuid);
+                                    if (check == null) {
+                                        String requestKey = null;
+                                        try { requestKey = ".heads/" + mc.player.getGameProfile().getName().toLowerCase() + ".png"; } catch (Throwable ignored) {}
+                                        if (requestKey != null) {
+                                            try { IconSyncHandler.requestIconFromServer(requestKey); } catch (Throwable ignored) {}
+                                        }
+                                        try { SkinCache.forceRefresh(fUuid); } catch (Throwable ignored) {}
+                                    }
+                                } catch (Throwable ignored) {}
                             }
                         } catch (Throwable ignored) {}
                     }
@@ -93,13 +109,13 @@ public class DialoguePacketHandler {
         });
 
         // Получение истории с сервера
-        ClientPlayNetworking.registerGlobalReceiver(HistorySyncPayload.ID, (payload, context) -> {
-            context.client().execute(() -> {
+        ClientPlayNetworking.registerGlobalReceiver(HistorySyncPayload.ID, (client, handler, buf, responseSender) -> {
+            PacketByteBuf pbuf = new PacketByteBuf(buf);
+            HistorySyncPayload payload = HistorySyncPayload.read(pbuf);
+            client.execute(() -> {
                 if (payload.fullSync()) {
-                    // Полная синхронизация при входе — заменяем историю
-                    // Preload skins for entries (resolve @s to local player on client)
                     try {
-                        var mc = context.client();
+                        var mc = client;
                         for (var e : payload.entries()) {
                             String raw = e.icon();
                             String norm = normalizeIcon(raw);
@@ -109,7 +125,7 @@ public class DialoguePacketHandler {
                                     SkinCache.preload(entryUuid);
                                 } else if (mc.player != null) {
                                     String local = null;
-                                    try { local = mc.player.getGameProfile().name(); } catch (Throwable t) { local = mc.player.getName().getString(); }
+                                    try { local = mc.player.getGameProfile().getName(); } catch (Throwable t) { local = mc.player.getName().getString(); }
                                     if (local != null) SkinCache.preload(local);
                                 }
                             } else {
@@ -119,17 +135,16 @@ public class DialoguePacketHandler {
                     } catch (Throwable ignored) {}
                     DialogueHistory.loadFromServer(payload.entries());
                 } else if (!payload.entries().isEmpty()) {
-                    // Инкрементальная — добавляем одна запись
                     var e = payload.entries().get(0);
                     String iconNorm = normalizeIcon(e.icon());
                     String entryUuid = e.skinUuid();
                     try {
-                        var mc = context.client();
+                        var mc = client;
                         if ("@s".equals(iconNorm)) {
                             if (entryUuid != null && !entryUuid.isEmpty()) SkinCache.preload(entryUuid);
                             else if (mc.player != null) {
                                 String local = null;
-                                try { local = mc.player.getGameProfile().name(); } catch (Throwable t) { local = mc.player.getName().getString(); }
+                                try { local = mc.player.getGameProfile().getName(); } catch (Throwable t) { local = mc.player.getName().getString(); }
                                 if (local != null) SkinCache.preload(local);
                             }
                         } else {
@@ -146,15 +161,24 @@ public class DialoguePacketHandler {
     public static Text parseJsonToText(String jsonText) {
         if (jsonText == null || jsonText.isEmpty()) return Text.literal("");
 
-        // 1) Try Minecraft's built-in TextCodecs (supports font, clickEvent, hoverEvent, all styles)
+        // 1) Try robust Gson parse into component using our fallback parseComponent
         try {
             com.google.gson.JsonElement element = JsonParser.parseString(jsonText);
-            var result = net.minecraft.text.TextCodecs.CODEC.parse(
-                    com.mojang.serialization.JsonOps.INSTANCE, element);
-            var opt = result.result();
-            if (opt.isPresent()) return opt.get();
+            // Try to parse as a single component or array using our manual parser
+            if (element.isJsonArray()) {
+                var array = element.getAsJsonArray();
+                if (array.size() == 0) return Text.literal("");
+                MutableText result = null;
+                for (var item : array) {
+                    Text comp = parseComponent(item);
+                    if (result == null) result = comp.copy(); else result.append(comp);
+                }
+                if (result != null) return result;
+            } else {
+                return parseComponent(element);
+            }
         } catch (Exception ignored) {
-            // JSON may be malformed/truncated — fall through
+            // JSON may be malformed/truncated — fall through to recovery paths below
         }
 
         // 2) Try manual parse as fallback (handles truncated JSON)
@@ -180,21 +204,7 @@ public class DialoguePacketHandler {
             int lastObj = jsonText.lastIndexOf('}');
             if (lastObj >= 0) {
                 String candidate = jsonText.substring(0, lastObj + 1) + "]";
-                // Try TextCodecs first for the recovered candidate
-                try {
-                    com.google.gson.JsonElement el = JsonParser.parseString(candidate);
-                    var result = net.minecraft.text.TextCodecs.CODEC.parse(
-                            com.mojang.serialization.JsonOps.INSTANCE, el);
-                    var opt = result.result();
-                    if (opt.isPresent()) {
-                        MutableText parsed = opt.get().copy();
-                        String tail = jsonText.substring(lastObj + 1).replaceAll("^[,\\]\\s]+", "");
-                        if (!tail.isEmpty()) parsed.append(extractReadableText(tail));
-                        return parsed;
-                    }
-                } catch (Exception ignored) {}
-
-                // Fallback: manual parse for recovered candidate
+                // Manual parse for recovered candidate
                 try {
                     com.google.gson.JsonElement el = JsonParser.parseString(candidate);
                     if (el.isJsonArray()) {
@@ -280,6 +290,12 @@ public class DialoguePacketHandler {
                     mutable.styled(s -> s.withStrikethrough(true));
                 if (obj.has("obfuscated") && obj.get("obfuscated").getAsBoolean())
                     mutable.styled(s -> s.withObfuscated(true));
+                if (obj.has("font")) {
+                    try {
+                        Identifier fontId = new Identifier(obj.get("font").getAsString());
+                        mutable.styled(s -> s.withFont(fontId));
+                    } catch (Throwable ignored) {}
+                }
                 if (obj.has("extra") && obj.get("extra").isJsonArray()) {
                     for (var extra : obj.get("extra").getAsJsonArray()) {
                         mutable.append(parseComponent(extra));
