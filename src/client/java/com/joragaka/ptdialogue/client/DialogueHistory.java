@@ -59,7 +59,6 @@ public class DialogueHistory {
             history.add(new Entry(icon, e.name(), e.color(), parsed, e.timestamp()));
         }
         version++;
-        System.out.println("[ptdialogue] Loaded " + history.size() + " history entries from server");
     }
 
     /** Incremental update — append a single new entry received in real-time. */

@@ -4,7 +4,6 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import com.joragaka.ptdialogue.IconSyncPayload;
 import com.joragaka.ptdialogue.IconRequestPayload;
@@ -32,11 +31,6 @@ public class ptdialogueClient implements ClientModInitializer {
 
         // Register handler for icon/head sync from server
         IconSyncHandler.register();
-
-        // Register HUD rendering
-        HudRenderCallback.EVENT.register((drawContext, renderTickCounter) -> {
-            DialogueRenderer.renderDialogue(drawContext, renderTickCounter);
-        });
 
         // Register keybinding to open dialogue history screen (default: H)
         openHistoryKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(

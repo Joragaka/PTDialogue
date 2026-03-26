@@ -5,11 +5,23 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="@s icon image modifier, + optimisation fixes">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/runConfigurations/Minecraft_Server.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/runConfigurations/Minecraft_Server.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/build.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/build.gradle" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gradle.properties" beforeDir="false" afterPath="$PROJECT_DIR$/gradle.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueClientConfig.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueClientConfig.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistory.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/IconSyncHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/IconSyncHandler.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/ptdialogueClient.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/ptdialogueClient.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/ptdialogueModMenuIntegration.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/resources/ptdialogue.client.mixins.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/resources/ptdialogue.client.mixins.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/PtDialogue.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/PtDialogue.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/fabric.mod.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/fabric.mod.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -33,6 +45,17 @@
               <path>
                 <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
                 <item name="PTDialogue" type="f1a62948:ProjectNode" />
+              </path>
+              <path>
+                <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
+                <item name="PTDialogue" type="f1a62948:ProjectNode" />
+                <item name="Tasks" type="e4a08cd1:TasksNode" />
+              </path>
+              <path>
+                <item name="" type="6a2764b6:ExternalProjectsStructure$RootNode" />
+                <item name="PTDialogue" type="f1a62948:ProjectNode" />
+                <item name="Tasks" type="e4a08cd1:TasksNode" />
+                <item name="fabric" type="c8890929:TasksNode$1" />
               </path>
             </expand>
             <select />
@@ -60,24 +83,31 @@
   &quot;associatedIndex&quot;: 0
 }</component>
   <component name="ProjectId" id="3B8QUw0ONfxdWzKPFJzKvdcrX2L" />
+  <component name="ProjectLevelVcsManager">
+    <OptionsSetting value="false" id="Update" />
+  </component>
   <component name="ProjectViewState">
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;Gradle.D:/MPROJECTS/PtLoreThing [wrapper].executor&quot;: &quot;Run&quot;,
-    &quot;Gradle.ptlorething [build].executor&quot;: &quot;Run&quot;,
-    &quot;Gradle.ptlorething [runClient].executor&quot;: &quot;Run&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;D:/MPROJECTS/PTDialogue&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.lookFeel&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Application.Minecraft Server.executor": "Run",
+    "Gradle.Build PTDialogue.executor": "Run",
+    "Gradle.D:/MPROJECTS/PtLoreThing [wrapper].executor": "Run",
+    "Gradle.Download Sources.executor": "Run",
+    "Gradle.PTDialogue [runServer].executor": "Run",
+    "Gradle.ptlorething [build].executor": "Run",
+    "Gradle.ptlorething [runClient].executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "master",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "D:/MPROJECTS/PTDialogue",
+    "settings.editor.selected.configurable": "preferences.lookFeel"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="D:\MPROJECTS\PtLoreThing\src\main\resources\assets\ptlorething" />
@@ -85,6 +115,28 @@
     </key>
   </component>
   <component name="RunManager" selected="Gradle.ptlorething [build]">
+    <configuration name="PTDialogue [runServer]" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
+      <ExternalSystemSettings>
+        <option name="executionName" />
+        <option name="externalProjectPath" value="$PROJECT_DIR$" />
+        <option name="externalSystemIdString" value="GRADLE" />
+        <option name="scriptParameters" />
+        <option name="taskDescriptions">
+          <list />
+        </option>
+        <option name="taskNames">
+          <list>
+            <option value="runServer" />
+          </list>
+        </option>
+        <option name="vmOptions" />
+      </ExternalSystemSettings>
+      <ExternalSystemDebugServerProcess>true</ExternalSystemDebugServerProcess>
+      <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+      <DebugAllEnabled>false</DebugAllEnabled>
+      <RunAsTest>false</RunAsTest>
+      <method v="2" />
+    </configuration>
     <configuration name="ptlorething [build]" type="GradleRunConfiguration" factoryName="Gradle" temporary="true">
       <ExternalSystemSettings>
         <option name="executionName" />
@@ -142,8 +194,9 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Gradle.ptlorething [runClient]" />
         <item itemvalue="Gradle.ptlorething [build]" />
+        <item itemvalue="Gradle.PTDialogue [runServer]" />
+        <item itemvalue="Gradle.ptlorething [runClient]" />
       </list>
     </recent_temporary>
   </component>

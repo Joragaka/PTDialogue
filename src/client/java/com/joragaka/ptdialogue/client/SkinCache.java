@@ -327,8 +327,6 @@ public class SkinCache {
                         cacheTimestamps.put(knownName.toLowerCase(), System.currentTimeMillis());
                     }
                 } catch (Throwable ignored) {}
-                // Debug: one-time notice that head texture was registered
-                try { System.out.println("[ptdialogue-skincache] registered head for '" + key + "' -> " + textureId.toString()); } catch (Throwable ignored) {}
                 // Notify listeners waiting for this head
                 List<Consumer<Identifier>> listeners = headListeners.remove(key);
                 if (listeners != null) {
@@ -444,8 +442,6 @@ public class SkinCache {
                                 cacheTimestamps.put(knownName.toLowerCase(), System.currentTimeMillis());
                             }
                         } catch (Throwable ignored) {}
-                        // Debug: one-time notice that head texture was registered
-                        try { System.out.println("[ptdialogue-skincache] registered head for '" + key + "' -> " + headId.toString()); } catch (Throwable ignored) {}
                         // Notify listeners waiting for this head
                         List<Consumer<Identifier>> listeners = headListeners.remove(key);
                         if (listeners != null) {

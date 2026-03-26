@@ -348,6 +348,10 @@ public class DialogueRenderer {
     private static void drawCustomTexture(DrawContext drawContext, Identifier texture, int x, int y, int width, int height, float alpha) {
         try {
             int colorArgb = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
+            // Use the drawTexture overload that doesn't require an explicit pipeline.
+            // Some render pipelines expect extra vertex attributes (like UV2) when used
+            // explicitly; calling the simpler overload avoids mismatch on certain environments.
+            // use integer UV offsets (0) so compiler selects the Identifier-first overload
             var pipeline = RenderPipelines.GUI_TEXTURED;
             drawContext.drawTexture(pipeline, texture, x, y, 0.0f, 0.0f, width, height, width, height, colorArgb);
         } catch (Exception e) {

@@ -9,6 +9,9 @@ import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.command.permission.Permission;
+import net.minecraft.command.permission.PermissionCheck;
+import net.minecraft.command.permission.PermissionLevel;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -55,7 +58,7 @@ public class DialogueCommand {
             // /dialogue <targets> <icon> <name> <colorname> <message...>
             dispatcher.register(
                 CommandManager.literal("dialogue")
-                    .requires(source -> source.getServer() != null)
+                    .requires(CommandManager.requirePermissionLevel(new PermissionCheck.Require(new Permission.Level(PermissionLevel.GAMEMASTERS))))
                     .then(
                         CommandManager.argument("targets", EntityArgumentType.players())
                             .then(

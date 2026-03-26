@@ -79,7 +79,6 @@ public class IconSyncManager {
         PayloadTypeRegistry.playC2S().register(IconRequestPayload.ID, IconRequestPayload.CODEC);
 
         if (DISABLE_SERVER_SYNC) {
-            System.out.println("[PTDialogue] Server-side icon sync DISABLED (emergency). Background tasks won't start.");
         }
 
         // Server-side logic (join handler, watcher, lifecycle) only when not disabled
@@ -117,7 +116,6 @@ public class IconSyncManager {
                     try {
                         boolean hasMod = ServerPlayNetworking.canSend(player, IconSyncPayload.ID);
                         if (!hasMod) {
-                            System.out.println("[PTDialogue] Disconnecting player " + displayName + " — missing PTDialogue mod.");
                             player.networkHandler.disconnect(net.minecraft.text.Text.literal("You must install the PTDialogue mod to join this server."));
                             return;
                         }
@@ -133,7 +131,6 @@ public class IconSyncManager {
                             sendAllCachedHeadsAsync(player);
                         }, IO_EXECUTOR);
                     } else {
-                        System.out.println("[PTDialogue] AUTO_SEND_ON_JOIN is disabled — skipping icon/head sync for " + displayName);
                     }
                   });
             });
@@ -162,7 +159,6 @@ public class IconSyncManager {
             }
             List<IconSyncPayload> sendSlice = toSend;
             if (toSend.size() > MAX_ICONS_PER_JOIN) {
-                System.out.println("[PTDialogue] Limiting icons sent on join to " + MAX_ICONS_PER_JOIN + " (available=" + toSend.size() + ")");
                 sendSlice = new ArrayList<>(toSend.subList(0, MAX_ICONS_PER_JOIN));
             }
             MinecraftServer srv = serverInstance;
@@ -260,7 +256,6 @@ public class IconSyncManager {
             }
         }, SCAN_INTERVAL_SECONDS, SCAN_INTERVAL_SECONDS, TimeUnit.SECONDS);
 
-        System.out.println("[PTDialogue] Started icon folder watcher (every " + SCAN_INTERVAL_SECONDS + "s)");
     }
 
     private static synchronized void stopIconWatcher() {
@@ -268,7 +263,6 @@ public class IconSyncManager {
             iconWatcherExecutor.shutdownNow();
             iconWatcherExecutor = null;
             knownIconHashes.clear();
-            System.out.println("[PTDialogue] Stopped icon folder watcher");
         }
     }
 
@@ -366,7 +360,6 @@ public class IconSyncManager {
                         ServerPlayNetworking.send(player, payload);
                     } catch (Throwable ignored) {}
                 }
-                System.out.println("[PTDialogue] Hot-synced icon to all players: " + payload.path() + " (" + payload.data().length + " bytes)");
             }
         });
     }
@@ -399,7 +392,6 @@ public class IconSyncManager {
                     byte[] data = Files.readAllBytes(entry);
                     String md5 = computeMd5(data);
                     ServerPlayNetworking.send(player, new IconSyncPayload(relativePath, data, md5));
-                    System.out.println("[PTDialogue] Sent icon to client: " + relativePath + " (" + data.length + " bytes)");
                 }
             }
         }
@@ -474,7 +466,6 @@ public class IconSyncManager {
                 Files.createDirectories(skinFile.getParent());
                 Files.write(skinFile, skinPng);
 
-                System.out.println("[PTDialogue] Cached skin for head: " + playerName);
 
                 // Step 5: Broadcast to all online players
                 server.execute(() -> broadcastHead(key, server));
@@ -669,7 +660,6 @@ public class IconSyncManager {
                 Files.createDirectories(skinFile.getParent());
                 Files.write(skinFile, skinPng);
 
-                System.out.println("[PTDialogue] Cached skin for uuid head: " + uuid32);
                 server.execute(() -> broadcastHead(key, server));
             } catch (Exception e) {
                 System.err.println("[PTDialogue] Failed to fetch head for uuid " + uuid32 + ": " + e.getMessage());

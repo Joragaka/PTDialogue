@@ -118,7 +118,6 @@ public class DialogueClientConfig {
                 verticalPaddingFraction = obj.get("verticalPaddingFraction").getAsFloat();
             }
 
-            System.out.println("[ptdialogue] Config loaded: distance=" + distanceFromCenter + ", windowScale=" + windowScale + ", verticalPadding=" + verticalPaddingFraction);
         } catch (Exception e) {
             System.err.println("[ptdialogue] Failed to load config, using defaults: " + e.getMessage());
             save(); // Recreate with defaults

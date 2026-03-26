@@ -48,7 +48,6 @@ public class IconSyncHandler {
             if (client == null || client.getNetworkHandler() == null) return;
             net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking.send(
                     new com.joragaka.ptdialogue.IconRequestPayload(key));
-            System.out.println("[ptdialogue] Requested icon from server: " + key);
         } catch (Throwable t) {
             // best-effort
         }
@@ -98,8 +97,6 @@ public class IconSyncHandler {
 
         // Load texture directly from the byte data (instant, no disk re-read needed)
         CustomIconCache.evictAndReloadFromBytes(relativePath, data);
-
-        System.out.println("[ptdialogue] Synced icon from server: " + relativePath);
     }
 
     /**
@@ -112,7 +109,6 @@ public class IconSyncHandler {
 
         // Use SkinCache to composite and register the head
         SkinCache.compositeAndRegisterHead(nick, data);
-        System.out.println("[ptdialogue] Synced head from server: " + nick);
     }
 
     /**

@@ -31,8 +31,6 @@ public class DialogueHistoryScreen extends Screen {
     private static final int HORIZONTAL_PADDING = 20;
     private static final int ENTRY_GAP = 6;
 
-    // One-time debug set to avoid spamming which source provided the head for a given name
-    private static final java.util.Set<String> debugLoggedNames = java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
 
     private double scrollOffset = 0;
     private int totalContentHeight = 0;
@@ -57,6 +55,7 @@ public class DialogueHistoryScreen extends Screen {
     private final float animDurationMs = 220f; // duration in ms
     private boolean animClosing = false;
     private float animProgress = 0f; // 0..1
+
 
     public DialogueHistoryScreen() {
         super(Text.translatable("screen.ptdialogue.dialogueHistory"));
@@ -459,9 +458,10 @@ public class DialogueHistoryScreen extends Screen {
             drawContext.enableScissor(0, 0, guiW, guiH);
 
             int color = applyAlphaToColor(0xFFFFFFFF, alpha);
+            // Use explicit GUI pipeline (restoring original call to satisfy compilation)
             drawContext.drawTexture(pipeline, BACKGROUND_TEXTURE,
                     destX, 0,
-                    0f, 0f,
+                    0.0f, 0.0f,
                     destW, guiH,
                     destW, guiH,
                     color);
@@ -492,9 +492,6 @@ public class DialogueHistoryScreen extends Screen {
             Identifier customTex = CustomIconCache.getIconTextureId(icon);
             if (customTex != null) {
                 drawTex(drawContext, customTex, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
-                if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                    try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=CUSTOM"); } catch (Throwable ignored) {}
-                }
                 return;
             }
             drawTex(drawContext, MissingTextureHelper.getTextureId(), x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
@@ -511,9 +508,6 @@ public class DialogueHistoryScreen extends Screen {
             Identifier localHead = SkinCache.getHeadTextureId(resolvedIcon);
             if (localHead != null) {
                 drawTex(drawContext, localHead, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
-                if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                    try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=SKINCACHE (local)"); } catch (Throwable ignored) {}
-                }
                 return;
             }
             if (mc.getNetworkHandler() != null) {
@@ -523,9 +517,6 @@ public class DialogueHistoryScreen extends Screen {
                     if (st != null) {
                         int colorArgb = applyAlphaToColor(0xFFFFFFFF, alpha);
                         PlayerSkinDrawer.draw(drawContext, st, x, y, size, colorArgb);
-                        if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                            try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=PLAYERLIST (local)"); } catch (Throwable ignored) {}
-                        }
                         return;
                     }
                 }
@@ -537,9 +528,6 @@ public class DialogueHistoryScreen extends Screen {
         if (resolvedIcon != null) headId = SkinCache.getHeadTextureId(resolvedIcon);
         if (headId != null) {
             drawTex(drawContext, headId, x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
-            if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=SKINCACHE"); } catch (Throwable ignored) {}
-            }
             return;
         }
 
@@ -552,17 +540,11 @@ public class DialogueHistoryScreen extends Screen {
                 if (skinTextures != null) {
                     int colorArgb = applyAlphaToColor(0xFFFFFFFF, alpha);
                     PlayerSkinDrawer.draw(drawContext, skinTextures, x, y, size, colorArgb);
-                    if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-                        try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=PLAYERLIST"); } catch (Throwable ignored) {}
-                    }
                     return;
                 }
             }
         }
 
-        if (resolvedIcon != null && debugLoggedNames.add(resolvedIcon)) {
-            try { System.out.println("[ptdialogue-history-debug] name='" + resolvedIcon + "': source=MISSING"); } catch (Throwable ignored) {}
-        }
         drawTex(drawContext, MissingTextureHelper.getTextureId(), x, y, size, applyAlphaToColor(0xFFFFFFFF, alpha));
     }
 

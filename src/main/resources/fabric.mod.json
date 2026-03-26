@@ -20,7 +20,7 @@
     "fabric-datagen": ["com.joragaka.ptdialogue.client.ptdialogueDataGenerator"],
     "client": ["com.joragaka.ptdialogue.client.ptdialogueClient"],
     "main": ["com.joragaka.ptdialogue.PtDialogue"],
-    "modmenu": ["com.joragaka.ptdialogue.client.ptdialogueModMenuIntegration"]
+    "modmenu": ["com.joragaka.ptdialogue.client.PtDialogueModMenuIntegration"]
   },
 
   "mixins": [

@@ -76,14 +76,9 @@ public class HistoryManager {
     private static void sendHistoryToPlayer(ServerPlayerEntity player, MinecraftServer server) {
         String playerName = player.getGameProfile().name();
         Path file = getPlayerFile(server, playerName);
-        System.out.println("[PTDialogue] History file path: " + file.toAbsolutePath());
-
         // Load from disk and put in cache
         List<HistorySyncPayload.Entry> entries = new ArrayList<>(loadFromDisk(file));
         cache.put(playerName.toLowerCase(), entries);
-
-        System.out.println("[PTDialogue] Sending " + entries.size()
-                + " history entries to " + playerName);
         if (entries.isEmpty()) return;
         ServerPlayNetworking.send(player, new HistorySyncPayload(entries, true));
     }
@@ -171,7 +166,6 @@ public class HistoryManager {
                             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
                             Files.writeString(tmp, GSON.toJson(root));
                             Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-                            System.out.println("[PTDialogue] Repaired history file: " + file.toAbsolutePath());
                         } catch (Exception ex) {
                             // If atomic move not supported, try non-atomic replace
                             try {

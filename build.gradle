@@ -29,7 +29,8 @@ fabricApi {
 
 repositories {
     maven { url "https://maven.shedaniel.me/" }    // Cloth Config
-    maven { url "https://maven.terraformersmc.com/" } // Mod Menu
+    // TerraformersMC Maven (Mod Menu)
+    maven { url "https://maven.terraformersmc.com/releases/" }
 }
 
 dependencies {
@@ -41,12 +42,24 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     // Cloth Config (config screen)
-    modApi("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") {
+    modCompileOnly("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") {
+        exclude(group: "net.fabricmc.fabric-api")
+    }
+
+    // Provide Cloth Config at local runtime when running from IDE
+    modLocalRuntime("me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}") {
         exclude(group: "net.fabricmc.fabric-api")
     }
 
     // Mod Menu (optional, compile-only - for config button in mod list)
+    // ModMenu is optional: we only need its API at compile time and a runtime copy when running from IDE.
+    // Do NOT include ModMenu into the final mod jar to avoid duplicating the mod for users.
     modCompileOnly("com.terraformersmc:modmenu:${project.modmenu_version}") {
+        exclude(group: "net.fabricmc.fabric-api")
+    }
+
+    // Provide ModMenu at local runtime when running from IDE (runClient). This will not be packaged in the jar.
+    modLocalRuntime("com.terraformersmc:modmenu:${project.modmenu_version}") {
         exclude(group: "net.fabricmc.fabric-api")
     }
 }
