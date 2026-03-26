@@ -10,7 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Supplier;
+
 
 /**
  * Loads and caches custom PNG icons from config/ptlore/ptdialogue/.
@@ -66,60 +66,8 @@ public class CustomIconCache {
         return loadIconSync(key, iconFile);
     }
 
-    private static Identifier makeId(String namespace, String path) throws Exception {
-        // Try reflection-friendly construction to handle different mappings where Identifier constructors may be non-public
-        try {
-            java.lang.reflect.Constructor<?> ctor = Identifier.class.getDeclaredConstructor(String.class, String.class);
-            ctor.setAccessible(true);
-            return (Identifier) ctor.newInstance(namespace, path);
-        } catch (Throwable ignored) {}
-        try {
-            java.lang.reflect.Method m = Identifier.class.getDeclaredMethod("tryParse", String.class);
-            m.setAccessible(true);
-            Object o = m.invoke(null, namespace + ":" + path);
-            if (o instanceof Identifier) return (Identifier) o;
-        } catch (Throwable ignored) {}
-        try {
-            // fallback to single-arg constructor if present
-            java.lang.reflect.Constructor<?> ctor = Identifier.class.getDeclaredConstructor(String.class);
-            ctor.setAccessible(true);
-            return (Identifier) ctor.newInstance(namespace + ":" + path);
-        } catch (Throwable ignored) {}
-        // Last resort: call public constructor if available
-        try {
-            return new Identifier(namespace + ":" + path);
-        } catch (Throwable t) {
-            throw new RuntimeException("Unable to create Identifier for " + namespace + ":" + path, t);
-        }
-    }
-
-    private static Identifier createId(String namespace, String path) {
-        try { return makeId(namespace, path); } catch (Throwable t) { return null; }
-    }
-
-    private static Identifier createId(String combined) {
-        try {
-            // try parsing combined string
-            java.lang.reflect.Method m = Identifier.class.getDeclaredMethod("tryParse", String.class);
-            m.setAccessible(true);
-            Object o = m.invoke(null, combined);
-            if (o instanceof Identifier) return (Identifier) o;
-        } catch (Throwable ignored) {}
-        try { return new Identifier(combined); } catch (Throwable ignored) {}
-        return null;
-    }
-
     private static Identifier safeIdentifier(String ns, String path) {
-        Identifier id = createId(ns, path);
-        if (id == null) id = createId(ns + ":" + path);
-        if (id == null) throw new RuntimeException("Failed to build Identifier for: " + ns + ":" + path);
-        return id;
-    }
-
-    private static Identifier safeIdentifier(String combined) {
-        Identifier id = createId(combined);
-        if (id == null) throw new RuntimeException("Failed to build Identifier: " + combined);
-        return id;
+        return new Identifier(ns, path);
     }
 
     private static Identifier loadIconSync_internal(String key, Path filePath) throws Exception {
@@ -153,6 +101,21 @@ public class CustomIconCache {
         lastModifiedCache.remove(key);
         if (old != null) {
             try { MinecraftClient.getInstance().getTextureManager().destroyTexture(old); } catch (Exception ignored) {}
+        }
+    }
+
+    /**
+     * Evict a cached icon without reloading. The texture will be lazily loaded
+     * from disk when next requested via getIconTextureId().
+     */
+    public static void evict(String relativePath) {
+        String key = relativePath.replace('\\', '/').toLowerCase();
+        MinecraftClient client = MinecraftClient.getInstance();
+        Runnable doEvict = () -> evictIfPresent(key);
+        if (client.isOnThread()) {
+            doEvict.run();
+        } else {
+            client.execute(doEvict);
         }
     }
 
@@ -210,105 +173,14 @@ public class CustomIconCache {
         }
     }
 
-    // Reflection-friendly registration: try common constructors/fields for NativeImageBackedTexture across mappings
-    private static void registerNativeImageTexture(MinecraftClient client, Identifier id, NativeImage image) throws Exception {
-        Object textureObj = null;
-        Class<?> nibClass = net.minecraft.client.texture.NativeImageBackedTexture.class;
-        try {
-            // Try constructor (NativeImage)
-            try {
-                java.lang.reflect.Constructor<?> c = nibClass.getConstructor(net.minecraft.client.texture.NativeImage.class);
-                textureObj = c.newInstance(image);
-            } catch (NoSuchMethodException ignored) {
-                // try constructor (int,int,boolean)
-                try {
-                    java.lang.reflect.Constructor<?> c2 = nibClass.getConstructor(int.class, int.class, boolean.class);
-                    // create instance and then try to set 'image' field
-                    Object inst = c2.newInstance(image.getWidth(), image.getHeight(), Boolean.TRUE);
-                    try {
-                        java.lang.reflect.Field f = nibClass.getDeclaredField("image");
-                        f.setAccessible(true);
-                        f.set(inst, image);
-                        textureObj = inst;
-                    } catch (NoSuchFieldException | IllegalAccessException e) {
-                        // ignore and fallback
-                    }
-                } catch (NoSuchMethodException ignored2) {
-                    // try constructor (Supplier,String) or (Supplier,NativeImage) if present
-                    for (var ctor : nibClass.getConstructors()) {
-                        var params = ctor.getParameterTypes();
-                        if (params.length == 2) {
-                            try {
-                                if (params[0] == java.util.function.Supplier.class && params[1] == net.minecraft.client.texture.NativeImage.class) {
-                                    textureObj = ctor.newInstance((Supplier<String>)() -> id.toString(), image);
-                                    break;
-                                }
-                            } catch (Throwable ignored3) {}
-                        }
-                    }
-                }
-            }
-        } catch (Throwable t) {
-            // fallthrough to later attempt
-        }
-
-        if (textureObj == null) {
-            // Last resort: instantiate via default constructor and set 'image' field if possible
-            try {
-                Object inst = nibClass.getDeclaredConstructor().newInstance();
-                try {
-                    java.lang.reflect.Field f = nibClass.getDeclaredField("image");
-                    f.setAccessible(true);
-                    f.set(inst, image);
-                    textureObj = inst;
-                } catch (Throwable ignored) {}
-            } catch (Throwable ignored) {}
-        }
-
-        if (textureObj == null) {
-            // As a hard fallback, register a texture using the provided NativeImage via the direct constructor if available
-            // This will throw if unavailable, which the caller handles.
-            try {
-                client.getTextureManager().registerTexture(safeIdentifier(NAMESPACE, "fallback/" + System.identityHashCode(image)), new NativeImageBackedTexture(image));
-            } catch (Throwable t) {
-                // final fallback: attempt to register via reflection on the TextureManager
-                try {
-                    Object tm = client.getTextureManager();
-                    for (java.lang.reflect.Method mm : tm.getClass().getMethods()) {
-                        if (!mm.getName().equals("registerTexture")) continue;
-                        if (mm.getParameterCount() != 2) continue;
-                        try {
-                            mm.invoke(tm, id, textureObj);
-                            return;
-                        } catch (Throwable ignored) {}
-                    }
-                } catch (Throwable ignored) {}
-            }
-            return;
-        }
-
-        // register reflectively
-        try {
-            Object tm = client.getTextureManager();
-            try {
-                // Try typed call first
-                java.lang.reflect.Method reg = tm.getClass().getMethod("registerTexture", Identifier.class, textureObj.getClass());
-                reg.invoke(tm, id, textureObj);
-                return;
-            } catch (Throwable ignored) {}
-            // Fallback: find any registerTexture method with 2 params and invoke
-            for (java.lang.reflect.Method mm : tm.getClass().getMethods()) {
-                if (!mm.getName().equals("registerTexture")) continue;
-                if (mm.getParameterCount() != 2) continue;
-                try {
-                    mm.invoke(tm, id, textureObj);
-                    return;
-                } catch (Throwable ignored) {}
-            }
-        } catch (Throwable t) {
-            // final fallback: try original typed registration
-            try { client.getTextureManager().registerTexture(id, new NativeImageBackedTexture(image)); } catch (Throwable ignored) {}
-        }
+    /**
+     * Register a NativeImage as a texture. Uses direct API calls so Fabric can remap
+     * method names correctly in production (reflection-based name lookups like
+     * "registerTexture" fail in production because names are obfuscated to intermediary).
+     */
+    private static void registerNativeImageTexture(MinecraftClient client, Identifier id, NativeImage image) {
+        NativeImageBackedTexture texture = new NativeImageBackedTexture(image);
+        client.getTextureManager().registerTexture(id, texture);
     }
 
     private static Path getIconsDir() {

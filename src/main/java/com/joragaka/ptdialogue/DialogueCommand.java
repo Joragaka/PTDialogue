@@ -51,7 +51,7 @@ public class DialogueCommand {
             // /dialogue <targets> <icon> <name> <colorname> <message...>
             dispatcher.register(
                 CommandManager.literal("dialogue")
-                    .requires(source -> source.getServer() != null)
+                    .requires(source -> source.hasPermissionLevel(2))
                     .then(
                         CommandManager.argument("targets", EntityArgumentType.players())
                             .then(

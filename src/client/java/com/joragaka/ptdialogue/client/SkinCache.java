@@ -23,7 +23,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
+
 import java.util.List;
 import java.util.ArrayList;
 
@@ -657,76 +657,18 @@ public class SkinCache {
 
     // ──────────────── texture registration ─────────────
 
-    // Helper: create Identifier reflectively (avoid compile-time constructor calls)
     private static Identifier createIdentifierReflective(String namespace, String path) {
-        try {
-            Class<?> idClass = net.minecraft.util.Identifier.class;
-            try {
-                java.lang.reflect.Constructor<?> ctor = idClass.getDeclaredConstructor(String.class, String.class);
-                ctor.setAccessible(true);
-                return (Identifier) ctor.newInstance(namespace, path);
-            } catch (Throwable ignored) {}
-            // try single-string constructor
-            try {
-                java.lang.reflect.Constructor<?> ctor2 = idClass.getDeclaredConstructor(String.class);
-                ctor2.setAccessible(true);
-                return (Identifier) ctor2.newInstance(namespace + ":" + path);
-            } catch (Throwable ignored) {}
-            // try static parser
-            try {
-                java.lang.reflect.Method m = idClass.getMethod("tryParse", String.class);
-                Object o = m.invoke(null, namespace + ":" + path);
-                if (o instanceof Identifier) return (Identifier) o;
-            } catch (Throwable ignored) {}
-        } catch (Throwable ignored) {}
-        // last resort: attempt using public constructor (may not exist in some mappings)
-        try {
-            return new Identifier(namespace + ":" + path);
-        } catch (Throwable ignored) {}
-        throw new RuntimeException("Unable to construct Identifier: " + namespace + ":" + path);
+        return new Identifier(namespace, path);
     }
-
-    // NativeImage pixel helpers using only reflection (avoid direct calls)
-    private static java.lang.reflect.Method nativeGetPixelMethod = null;
-    private static java.lang.reflect.Method nativeSetPixelMethod = null;
 
     private static int nativeGetPixel(net.minecraft.client.texture.NativeImage img, int x, int y) {
         if (img == null) return 0;
-        try {
-            if (nativeGetPixelMethod == null) {
-                Class<?> c = net.minecraft.client.texture.NativeImage.class;
-                for (var m : c.getMethods()) {
-                    if (m.getParameterCount() == 2 && m.getReturnType() == int.class) {
-                        var ps = m.getParameterTypes();
-                        if (ps[0] == int.class && ps[1] == int.class) {
-                            nativeGetPixelMethod = m;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (nativeGetPixelMethod != null) return (int) nativeGetPixelMethod.invoke(img, x, y);
-        } catch (Throwable ignored) {}
-        return 0;
+        return img.getColor(x, y);
     }
 
     private static void nativeSetPixel(net.minecraft.client.texture.NativeImage img, int x, int y, int color) {
         if (img == null) return;
-        try {
-            if (nativeSetPixelMethod == null) {
-                Class<?> c = net.minecraft.client.texture.NativeImage.class;
-                for (var m : c.getMethods()) {
-                    if (m.getParameterCount() == 3 && m.getReturnType() == void.class) {
-                        var ps = m.getParameterTypes();
-                        if (ps[0] == int.class && ps[1] == int.class && ps[2] == int.class) {
-                            nativeSetPixelMethod = m;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (nativeSetPixelMethod != null) nativeSetPixelMethod.invoke(img, x, y, color);
-        } catch (Throwable ignored) {}
+        img.setColor(x, y, color);
     }
 
     /**
@@ -763,13 +705,7 @@ public class SkinCache {
         Runnable register = () -> {
             try {
                 try { client.getTextureManager().destroyTexture(finalTextureId); } catch (Exception ignored) {}
-                try {
-                    // Use reflection-based registration which handles various mappings
-                    registerNativeImageTexture(client, finalTextureId, headImage);
-                } catch (Throwable t) {
-                    // fallback: try typed constructor registration (may fail on some mappings)
-                    try { client.getTextureManager().registerTexture(finalTextureId, new NativeImageBackedTexture(headImage)); } catch (Throwable ignored) {}
-                }
+                registerNativeImageTexture(client, finalTextureId, headImage);
                 headTextureCache.put(key, finalTextureId);
                 // successful registration -> clear failure mark
                 failureTimestamps.remove(key);
@@ -1224,61 +1160,15 @@ public class SkinCache {
         if (loadingSet.add(key)) fetchSkinAsync(key, playerName);
     }
 
-    // Reflection-based texture registration similar to CustomIconCache.registerNativeImageTexture
-    private static void registerNativeImageTexture(MinecraftClient client, Identifier id, net.minecraft.client.texture.NativeImage image) throws Exception {
+    /**
+     * Register a NativeImage as a texture. Uses direct API calls so Fabric can remap
+     * method names correctly in production (reflection-based name lookups fail with
+     * obfuscated/intermediary names).
+     */
+    private static void registerNativeImageTexture(MinecraftClient client, Identifier id, net.minecraft.client.texture.NativeImage image) {
         if (client == null || id == null || image == null) return;
-        Class<?> nibClass = net.minecraft.client.texture.NativeImageBackedTexture.class;
-        Object textureObj = null;
-        try {
-            // try constructor NativeImage
-            try {
-                java.lang.reflect.Constructor<?> ctor = nibClass.getConstructor(net.minecraft.client.texture.NativeImage.class);
-                textureObj = ctor.newInstance(image);
-            } catch (NoSuchMethodException ignored) {
-                // try various fallbacks
-                for (var ctor : nibClass.getConstructors()) {
-                    var pts = ctor.getParameterTypes();
-                    if (pts.length == 1 && pts[0] == net.minecraft.client.texture.NativeImage.class) {
-                        try { textureObj = ctor.newInstance(image); break; } catch (Throwable ignored2) {}
-                    }
-                    if (pts.length == 3 && pts[0] == int.class && pts[1] == int.class) {
-                        try { textureObj = ctor.newInstance(image.getWidth(), image.getHeight(), Boolean.TRUE); break; } catch (Throwable ignored2) {}
-                    }
-                    if (pts.length == 2 && pts[0] == java.util.function.Supplier.class) {
-                        try { textureObj = ctor.newInstance((Supplier<String>)() -> id.toString(), image); break; } catch (Throwable ignored2) {}
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
-
-        if (textureObj == null) {
-            try {
-                Object inst = nibClass.getDeclaredConstructor().newInstance();
-                try {
-                    java.lang.reflect.Field f = nibClass.getDeclaredField("image");
-                    f.setAccessible(true);
-                    f.set(inst, image);
-                    textureObj = inst;
-                } catch (Throwable ignored) {}
-            } catch (Throwable ignored) {}
-        }
-
-        Object tm = client.getTextureManager();
-        // try to register via reflection
-        if (textureObj != null) {
-            for (var m : tm.getClass().getMethods()) {
-                if (!m.getName().equals("registerTexture")) continue;
-                if (m.getParameterCount() != 2) continue;
-                try {
-                    m.invoke(tm, id, textureObj);
-                    return;
-                } catch (Throwable ignored) {}
-            }
-        }
-        // final fallback: try typed registration (may fail on some mappings)
-        try {
-            client.getTextureManager().registerTexture(id, new net.minecraft.client.texture.NativeImageBackedTexture(image));
-        } catch (Throwable ignored) {}
+        NativeImageBackedTexture texture = new NativeImageBackedTexture(image);
+        client.getTextureManager().registerTexture(id, texture);
     }
 
     private static void fetchSkinAsync(String key, String playerName) {

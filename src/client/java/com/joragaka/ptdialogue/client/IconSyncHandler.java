@@ -115,8 +115,9 @@ public class IconSyncHandler {
         Files.write(targetFile, data);
         serverHashes.put(relativePath.toLowerCase(), md5);
 
-        // Load texture directly from the byte data (instant, no disk re-read needed)
-        CustomIconCache.evictAndReloadFromBytes(relativePath, data);
+        // Evict cached texture so it gets lazily reloaded from disk when needed.
+        // Avoids loading all textures at once (OOM on MemoryStack when server sends many icons).
+        CustomIconCache.evict(relativePath);
 
     }
 

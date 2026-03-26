@@ -64,54 +64,47 @@ public class IconSyncManager {
     /** Limit number of icons/heads to send at join to avoid blocking server tick */
     private static final int MAX_ICONS_PER_JOIN = 50;
 
-    // Emergency switch: disable automatic sending of all icons/heads on player join to prevent server freezes.
-    // Set to true to re-enable (use after profiling/optimizations).
-    private static volatile boolean AUTO_SEND_ON_JOIN = false;
+    // Automatic sending of all icons/heads on player join.
+    private static volatile boolean AUTO_SEND_ON_JOIN = true;
 
-    // Global emergency switch: completely disable server-side icon/head sync and background workers.
-    // Set to false to re-enable once performance fixes are validated.
-    private static volatile boolean DISABLE_SERVER_SYNC = true;
+    // Global switch: disable server-side icon/head sync and background workers.
+    private static volatile boolean DISABLE_SERVER_SYNC = false;
 
     public static void register() {
-        // Register payload types not required server-side when using manual PacketByteBuf serialization
+        // Always check that connecting clients have the mod installed
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            ServerPlayerEntity player = handler.getPlayer();
 
-        if (DISABLE_SERVER_SYNC) {
-        }
-
-        if (!DISABLE_SERVER_SYNC) {
-            ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-                ServerPlayerEntity player = handler.getPlayer();
-
-                // Store server reference for periodic broadcasting
-                serverInstance = server;
-
-                // Start periodic icon folder scanner if not already running
-                startIconWatcher();
-
-                // Also fetch and cache this player's head if not already done
-                String profileName = null;
-                try { profileName = player.getGameProfile().getName(); } catch (Throwable ignored) {}
-                final String displayName = (profileName == null || profileName.isEmpty()) ? player.getName().getString() : profileName;
-                String uuidKey;
-                try { uuidKey = player.getUuid().toString().toLowerCase(); } catch (Throwable ignored) { uuidKey = ""; }
-                String nameKey = profileName == null ? "" : profileName.toLowerCase();
-
-                if (!uuidKey.isEmpty() && knownPlayers.add(uuidKey)) {
-                    fetchAndCacheHeadByUuid(uuidKey, server);
-                }
-                if (!nameKey.isEmpty() && knownPlayers.add(nameKey)) {
-                    fetchAndCacheHead(nameKey, server);
+            server.execute(() -> {
+                if (player.isDisconnected()) return;
+                try {
+                    boolean hasMod = ServerPlayNetworking.canSend(player, IconSyncPayload.ID);
+                    if (!hasMod) {
+                        player.networkHandler.disconnect(net.minecraft.text.Text.literal("You must install the PTDialogue mod to join this server."));
+                        return;
+                    }
+                } catch (Throwable t) {
                 }
 
-                server.execute(() -> {
-                    if (player.isDisconnected()) return;
-                    try {
-                        boolean hasMod = ServerPlayNetworking.canSend(player, IconSyncPayload.ID);
-                        if (!hasMod) {
-                            player.networkHandler.disconnect(net.minecraft.text.Text.literal("You must install the PTDialogue mod to join this server."));
-                            return;
-                        }
-                    } catch (Throwable t) {
+                if (!DISABLE_SERVER_SYNC) {
+                    // Store server reference for periodic broadcasting
+                    serverInstance = server;
+
+                    // Start periodic icon folder scanner if not already running
+                    startIconWatcher();
+
+                    // Also fetch and cache this player's head if not already done
+                    String profileName = null;
+                    try { profileName = player.getGameProfile().getName(); } catch (Throwable ignored) {}
+                    String uuidKey;
+                    try { uuidKey = player.getUuid().toString().toLowerCase(); } catch (Throwable ignored) { uuidKey = ""; }
+                    String nameKey = profileName == null ? "" : profileName.toLowerCase();
+
+                    if (!uuidKey.isEmpty() && knownPlayers.add(uuidKey)) {
+                        fetchAndCacheHeadByUuid(uuidKey, server);
+                    }
+                    if (!nameKey.isEmpty() && knownPlayers.add(nameKey)) {
+                        fetchAndCacheHead(nameKey, server);
                     }
 
                     if (AUTO_SEND_ON_JOIN) {
@@ -120,11 +113,12 @@ public class IconSyncManager {
                             sendAllIconsAsync(player);
                             sendAllCachedHeadsAsync(player);
                         }, IO_EXECUTOR);
-                    } else {
                     }
-                  });
+                }
             });
+        });
 
+        if (!DISABLE_SERVER_SYNC) {
             ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
                 stopIconWatcher();
                 serverInstance = null;

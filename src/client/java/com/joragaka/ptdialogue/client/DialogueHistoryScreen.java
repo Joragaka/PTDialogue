@@ -54,6 +54,9 @@ public class DialogueHistoryScreen extends Screen {
     private boolean animClosing = false;
     private float animProgress = 0f; // 0..1
 
+    // Flag: when true, the InGameHudMixin cancels HUD rendering (hand stays visible)
+    public static boolean suppressHud = false;
+
     public DialogueHistoryScreen() {
         super(Text.translatable("screen.ptdialogue.dialogueHistory"));
     }
@@ -91,6 +94,13 @@ public class DialogueHistoryScreen extends Screen {
         animStartTimeNs = System.nanoTime();
         animClosing = false;
         animProgress = 0f;
+        suppressHud = true;
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        suppressHud = false;
     }
 
     /** Force-refresh the local player's composited head so the history shows the latest skin. */

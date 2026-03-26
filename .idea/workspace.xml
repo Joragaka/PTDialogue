@@ -5,13 +5,17 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="dab36145-942f-427e-b03b-aedc6a79d1ea" name="Changes" comment="scroll wheel removed">
-      <change beforePath="$PROJECT_DIR$/.idea/modules/PTDialogue.client.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules/PTDialogue.client.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules/PTDialogue.main.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules/PTDialogue.main.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules/PTDialogue.test.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules/PTDialogue.test.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/runConfigurations/Minecraft_Server.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/runConfigurations/Minecraft_Server.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.gradle" beforeDir="false" afterPath="$PROJECT_DIR$/build.gradle" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/HistoryManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gradle.properties" beforeDir="false" afterPath="$PROJECT_DIR$/gradle.properties" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/CustomIconCache.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/CustomIconCache.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueHistoryScreen.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/DialogueRenderer.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/IconSyncHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/IconSyncHandler.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/MissingTextureHelper.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/MissingTextureHelper.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/java/com/joragaka/ptdialogue/client/SkinCache.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/client/resources/ptdialogue.client.mixins.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/client/resources/ptdialogue.client.mixins.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/DialogueCommand.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/joragaka/ptdialogue/IconSyncManager.java" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -89,7 +93,7 @@
     "project.structure.last.edited": "SDKs",
     "project.structure.proportion": "0.15",
     "project.structure.side.proportion": "0.2",
-    "settings.editor.selected.configurable": "debugger.dataViews"
+    "settings.editor.selected.configurable": "preferences.general"
   }
 }]]></component>
   <component name="RecentsManager">

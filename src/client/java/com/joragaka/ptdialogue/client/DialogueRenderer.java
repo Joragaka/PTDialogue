@@ -187,6 +187,11 @@ public class DialogueRenderer {
         int boxX = (screenWidth - boxWidth) / 2;
         int boxY = centerY - boxHeight / 2;
 
+        // Push matrix and raise z so dialogue renders above vanilla chat
+        var matrices = drawContext.getMatrices();
+        matrices.push();
+        matrices.translate(0, 0, 200);
+
         // Draw background box
         drawSemiTransparentBox(drawContext, boxX, boxY, boxWidth, boxHeight, alpha);
 
@@ -207,7 +212,6 @@ public class DialogueRenderer {
         textStartY += 2;
         int textArgb   = ((int)(alpha * 255) << 24) | 0x00FFFFFF;
 
-        var matrices = drawContext.getMatrices();
         matrices.scale(textScale, textScale, 1.0f);
 
         int drawX    = Math.max(0, Math.round(textX      / Math.max(0.001f, textScale)));
@@ -236,7 +240,7 @@ public class DialogueRenderer {
             currentY += unscaledLineSpacing;
         }
 
-        matrices.scale(1.0f / Math.max(0.001f, textScale), 1.0f / Math.max(0.001f, textScale), 1.0f);
+        matrices.pop();
     }
 
     private static void drawPlayerHead(DrawContext drawContext, MinecraftClient client, String icon, int x, int y, int size, float alpha) {
