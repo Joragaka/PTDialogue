@@ -1,26 +1,33 @@
 package com.joragaka.ptdialogue;
 
-import io.netty.buffer.Unpooled;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraftforge.network.NetworkEvent;
 
-/**
- * C2S payload: client requests the server to re-send a specific icon by path.
- */
-public record IconRequestPayload(String path) {
-    public static final Identifier ID = new Identifier("ptdialogue", "icon_request");
+import java.util.function.Supplier;
 
-    public void write(PacketByteBuf buf) {
-        buf.writeString(path == null ? "" : path);
+public class IconRequestPayload {
+
+    private final String path;
+
+    public IconRequestPayload(String path) {
+        this.path = path;
     }
 
-    public static IconRequestPayload read(PacketByteBuf buf) {
-        return new IconRequestPayload(buf.readString());
+    public String path() { return path; }
+
+    public void write(FriendlyByteBuf buf) {
+        buf.writeUtf(path == null ? "" : path);
     }
 
-    public PacketByteBuf toBuf() {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        write(buf);
-        return buf;
+    public static IconRequestPayload read(FriendlyByteBuf buf) {
+        return new IconRequestPayload(buf.readUtf());
+    }
+
+    public static void handle(IconRequestPayload msg, Supplier<NetworkEvent.Context> ctx) {
+        ctx.get().enqueueWork(() -> {
+            // Server-side: handle icon request from client
+            // Currently no-op; could re-send the requested icon
+        });
+        ctx.get().setPacketHandled(true);
     }
 }

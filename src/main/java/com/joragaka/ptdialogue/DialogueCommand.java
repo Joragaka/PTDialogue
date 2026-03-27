@@ -1,17 +1,16 @@
 package com.joragaka.ptdialogue;
 
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.command.argument.EntityArgumentType;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 
 import java.util.Map;
 
@@ -46,42 +45,38 @@ public class DialogueCommand {
         return 0xFFFFFF;
     }
 
-    public static void register() {
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            // /dialogue <targets> <icon> <name> <colorname> <message...>
-            dispatcher.register(
-                CommandManager.literal("dialogue")
-                    .requires(source -> source.hasPermissionLevel(2))
-                    .then(
-                        CommandManager.argument("targets", EntityArgumentType.players())
-                            .then(
-                                CommandManager.argument("icon", StringArgumentType.string())
-                                    .then(
-                                        CommandManager.argument("name", StringArgumentType.string())
-                                            .then(
-                                                CommandManager.argument("colorname", StringArgumentType.word())
-                                                    .then(
-                                                        CommandManager.argument("message", StringArgumentType.greedyString())
-                                                            .executes(DialogueCommand::executeDialogue)
-                                                    )
-                                            )
-                                    )
-                            )
-                    )
-            );
-        });
+    public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(
+            Commands.literal("dialogue")
+                .requires(source -> source.hasPermission(2))
+                .then(
+                    Commands.argument("targets", EntityArgument.players())
+                        .then(
+                            Commands.argument("icon", StringArgumentType.string())
+                                .then(
+                                    Commands.argument("name", StringArgumentType.string())
+                                        .then(
+                                            Commands.argument("colorname", StringArgumentType.word())
+                                                .then(
+                                                    Commands.argument("message", StringArgumentType.greedyString())
+                                                        .executes(DialogueCommand::executeDialogue)
+                                                )
+                                        )
+                                )
+                        )
+                )
+        );
     }
 
-    private static int executeDialogue(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
-        var targets = EntityArgumentType.getPlayers(context, "targets");
+    private static int executeDialogue(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        var targets = EntityArgument.getPlayers(context, "targets");
         String icon      = StringArgumentType.getString(context, "icon");
         String name      = StringArgumentType.getString(context, "name");
         String colorname = StringArgumentType.getString(context, "colorname");
         String message   = StringArgumentType.getString(context, "message");
 
-        for (PlayerEntity player : targets) {
-            if (player instanceof ServerPlayerEntity serverPlayer) {
-                // Normalize icon (strip surrounding quotes) but do NOT expand @s here.
+        for (Player player : targets) {
+            if (player instanceof ServerPlayer serverPlayer) {
                 String iconToSend = icon;
                 if (iconToSend != null) {
                     iconToSend = iconToSend.trim();
@@ -90,7 +85,6 @@ public class DialogueCommand {
                     }
                 }
 
-                // Normalize name: allow quoted names and support @s replacement per-recipient
                 String nameToSend = name == null ? "" : name.trim();
                 if (nameToSend.length() >= 2 && ((nameToSend.startsWith("\"") && nameToSend.endsWith("\"")) || (nameToSend.startsWith("'") && nameToSend.endsWith("'")))) {
                     nameToSend = nameToSend.substring(1, nameToSend.length() - 1);
@@ -99,35 +93,30 @@ public class DialogueCommand {
                     try { nameToSend = serverPlayer.getGameProfile().getName(); } catch (Throwable ignored) { nameToSend = ""; }
                 }
 
-                // Determine skin UUID to send when icon == @s
                 String skinUuid = null;
                 if ("@s".equals(iconToSend)) {
-                    try { skinUuid = serverPlayer.getUuid().toString(); } catch (Throwable ignored) { skinUuid = null; }
+                    try { skinUuid = serverPlayer.getUUID().toString(); } catch (Throwable ignored) { skinUuid = null; }
                 }
 
-                // If icon is @s and the server has a cached head PNG for this player, send it first
                 if ("@s".equals(iconToSend)) {
                     try {
                         String targetKey = serverPlayer.getGameProfile().getName().toLowerCase();
                         if (IconSyncManager.hasHead(targetKey)) {
                             IconSyncManager.sendHeadToPlayer(targetKey, serverPlayer);
                         } else {
-                            // Trigger background caching (non-blocking)
                             IconSyncManager.ensureHeadCached(serverPlayer.getGameProfile().getName(), context.getSource().getServer());
                         }
                     } catch (Throwable ignored) {}
                 }
 
-                // Send raw icon (may be "@s") and optional skinUuid
-                ServerPlayNetworking.send(serverPlayer, DialoguePayload.ID, new DialoguePayload(iconToSend, nameToSend, colorname, message, skinUuid).toBuf());
-                // Save raw icon into history; include skinUuid so clients can request exact skin
+                ModNetworking.sendToPlayer(new DialoguePayload(iconToSend, nameToSend, colorname, message, skinUuid), serverPlayer);
                 HistoryManager.record(serverPlayer, context.getSource().getServer(),
                         iconToSend, nameToSend, parseColor(colorname), message, skinUuid);
-             }
-         }
+            }
+        }
 
-        context.getSource().sendFeedback(
-            () -> Text.translatable("ptdialogue.command.dialogue.sent", targets.size()),
+        context.getSource().sendSuccess(
+            () -> Component.translatable("ptdialogue.command.dialogue.sent", targets.size()),
             false
         );
         return Command.SINGLE_SUCCESS;

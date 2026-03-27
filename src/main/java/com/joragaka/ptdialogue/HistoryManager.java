@@ -5,11 +5,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.WorldSavePath;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,72 +17,44 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Server-side dialogue history manager.
- * Saves per-player history in <world>/dialoguehistory/<player>.json
- * and syncs it to the client on join.
- */
 public class HistoryManager {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-
-    /** In-memory cache: playerName (lowercase)  list of entries */
     private static final Map<String, List<HistorySyncPayload.Entry>> cache = new ConcurrentHashMap<>();
 
-    public static void register() {
-        // On player join  send their history on the next server tick
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ServerPlayerEntity player = handler.getPlayer();
-            server.execute(() -> sendHistoryToPlayer(player, server));
-        });
-    }
-
-    /**
-     * Record a new dialogue entry for a player and immediately persist + sync.
-     * Called from DialogueCommand when /dialogue is executed.
-     */
-    public static void record(ServerPlayerEntity player, MinecraftServer server,
+    public static void record(ServerPlayer player, MinecraftServer server,
                                String icon, String name, int color, String message, String skinUuid) {
         String playerName = player.getGameProfile().getName();
         long ts = System.currentTimeMillis();
         HistorySyncPayload.Entry entry = new HistorySyncPayload.Entry(icon, name, color, message, ts, skinUuid);
 
-        // Add to in-memory cache
         List<HistorySyncPayload.Entry> entries = cache.computeIfAbsent(
                 playerName.toLowerCase(), k -> {
-                    // First time  load from disk
                     Path file = getPlayerFile(server, playerName);
                     return new ArrayList<>(loadFromDisk(file));
                 });
         entries.add(entry);
 
-        // Persist to disk
         saveToDisk(getPlayerFile(server, playerName), entries);
 
-        // Send incremental update to client
-        if (!player.isDisconnected()) {
-            ServerPlayNetworking.send(player, HistorySyncPayload.ID, new HistorySyncPayload(List.of(entry), false).toBuf());
+        if (!player.hasDisconnected()) {
+            ModNetworking.sendToPlayer(new HistorySyncPayload(List.of(entry), false), player);
         }
     }
 
-    //  Internal 
-
-    private static void sendHistoryToPlayer(ServerPlayerEntity player, MinecraftServer server) {
+    public static void sendHistoryToPlayer(ServerPlayer player, MinecraftServer server) {
         String playerName = player.getGameProfile().getName();
         Path file = getPlayerFile(server, playerName);
 
-        // Load from disk and put in cache
         List<HistorySyncPayload.Entry> entries = new ArrayList<>(loadFromDisk(file));
         cache.put(playerName.toLowerCase(), entries);
 
         if (entries.isEmpty()) return;
-        ServerPlayNetworking.send(player, HistorySyncPayload.ID, new HistorySyncPayload(entries, true).toBuf());
+        ModNetworking.sendToPlayer(new HistorySyncPayload(entries, true), player);
     }
 
     private static Path getHistoryDir(MinecraftServer server) {
-        // getSavePath(ROOT) returns the world root folder (e.g. saves/WorldName/)
-        Path worldRoot = server.getSavePath(WorldSavePath.ROOT).toAbsolutePath().normalize();
-        // ROOT is often "<world>/."  normalize() resolves the dot, giving us the world folder directly
+        Path worldRoot = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
         return worldRoot.resolve("dialoguehistory");
     }
 
@@ -115,7 +85,6 @@ public class HistoryManager {
                 }
                 return list;
             } catch (Exception parseEx) {
-                // Try to repair common truncation cases: if array was cut, try to close it at last '}' and append ']'
                 String s = json;
                 String repaired = null;
                 if (s != null && s.startsWith("[")) {
@@ -129,7 +98,6 @@ public class HistoryManager {
                     }
                 }
 
-                // If not repaired yet, progressively trim the tail until it parses (limit iterations)
                 if (repaired == null) {
                     int maxTrim = Math.min(1000, s.length());
                     for (int trim = 1; trim <= maxTrim; trim++) {
@@ -137,13 +105,11 @@ public class HistoryManager {
                             String cand = s.substring(0, s.length() - trim);
                             var root2 = JsonParser.parseString(cand);
                             if (root2.isJsonArray()) { repaired = cand; break; }
-                        } catch (Exception ignored) {
-                        }
+                        } catch (Exception ignored) {}
                     }
                 }
 
                 if (repaired != null) {
-                    // parse repaired content and rewrite the file atomically
                     try {
                         var root = JsonParser.parseString(repaired).getAsJsonArray();
                         for (var je : root) {
@@ -159,28 +125,21 @@ public class HistoryManager {
                             } catch (Exception ignored) {}
                         }
 
-                        // rewrite cleaned file atomically
                         try {
                             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
                             Files.writeString(tmp, GSON.toJson(root));
                             Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
                         } catch (Exception ex) {
-                            // If atomic move not supported, try non-atomic replace
                             try {
                                 Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
                                 Files.writeString(tmp, GSON.toJson(root));
                                 Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                            } catch (Exception ex2) {
-                            }
+                            } catch (Exception ignored) {}
                         }
-
-                    } catch (Exception ex) {
-                    }
-                } else {
+                    } catch (Exception ignored) {}
                 }
             }
-        } catch (IOException ex) {
-        }
+        } catch (IOException ignored) {}
         return list;
     }
 
@@ -195,20 +154,16 @@ public class HistoryManager {
                 o.addProperty("color",   e.color());
                 o.addProperty("message", e.message());
                 o.addProperty("ts",      e.timestamp());
-                // If entry contains skinUuid include it in persisted JSON
                 try { if (e.skinUuid() != null) o.addProperty("skinUuid", e.skinUuid()); } catch (Throwable ignored) {}
                 arr.add(o);
             }
-            // write atomically via temp file and move
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
             Files.writeString(tmp, GSON.toJson(arr));
             try {
                 Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
             } catch (Exception ex) {
-                // fallback if atomic move unsupported
                 Files.move(tmp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (IOException ex) {
-        }
+        } catch (IOException ignored) {}
     }
 }

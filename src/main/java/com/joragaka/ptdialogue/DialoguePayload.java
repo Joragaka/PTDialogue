@@ -1,38 +1,57 @@
 package com.joragaka.ptdialogue;
 
-import io.netty.buffer.Unpooled;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.util.Identifier;
+import com.joragaka.ptdialogue.client.DialoguePacketHandler;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.network.NetworkEvent;
 
-/**
- * Server->Client payload: dialogue message.
- * Используем ручную сериализацию через PacketByteBuf для Fabric 1.20.1.
- */
-public record DialoguePayload(String icon, String name, String colorname, String message, String skinUuid) {
+import java.util.function.Supplier;
 
-    public static final Identifier ID = new Identifier("ptdialogue", "dialogue");
+public class DialoguePayload {
 
-    public void write(PacketByteBuf buf) {
-        buf.writeString(icon == null ? "" : icon);
-        buf.writeString(name == null ? "" : name);
-        buf.writeString(colorname == null ? "" : colorname);
-        buf.writeString(message == null ? "" : message);
-        buf.writeString(skinUuid == null ? "" : skinUuid);
+    private final String icon;
+    private final String name;
+    private final String colorname;
+    private final String message;
+    private final String skinUuid;
+
+    public DialoguePayload(String icon, String name, String colorname, String message, String skinUuid) {
+        this.icon = icon;
+        this.name = name;
+        this.colorname = colorname;
+        this.message = message;
+        this.skinUuid = skinUuid;
     }
 
-    public static DialoguePayload read(PacketByteBuf buf) {
-        String icon = buf.readString();
-        String name = buf.readString();
-        String colorname = buf.readString();
-        String message = buf.readString();
-        String skin = buf.readString();
+    public String icon() { return icon; }
+    public String name() { return name; }
+    public String colorname() { return colorname; }
+    public String message() { return message; }
+    public String skinUuid() { return skinUuid; }
+
+    public void write(FriendlyByteBuf buf) {
+        buf.writeUtf(icon == null ? "" : icon);
+        buf.writeUtf(name == null ? "" : name);
+        buf.writeUtf(colorname == null ? "" : colorname);
+        buf.writeUtf(message == null ? "" : message);
+        buf.writeUtf(skinUuid == null ? "" : skinUuid);
+    }
+
+    public static DialoguePayload read(FriendlyByteBuf buf) {
+        String icon = buf.readUtf();
+        String name = buf.readUtf();
+        String colorname = buf.readUtf();
+        String message = buf.readUtf();
+        String skin = buf.readUtf();
         String skinUuid = (skin == null || skin.isEmpty()) ? null : skin;
         return new DialoguePayload(icon, name, colorname, message, skinUuid);
     }
 
-    public PacketByteBuf toBuf() {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        write(buf);
-        return buf;
+    public static void handle(DialoguePayload msg, Supplier<NetworkEvent.Context> ctx) {
+        ctx.get().enqueueWork(() -> {
+            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> DialoguePacketHandler.handleDialogue(msg));
+        });
+        ctx.get().setPacketHandled(true);
     }
 }

@@ -2,11 +2,9 @@ package com.joragaka.ptdialogue;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.fml.loading.FMLPaths;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -22,12 +20,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Server-side manager that:
- * 1. Sends all custom icons from config/ptlore/ptdialogue/ to connecting clients
- * 2. Downloads & caches player head textures via Mojang API
- * 3. Distributes head textures to all clients
- */
 public class IconSyncManager {
 
     private static final String HEADS_SUBFOLDER = ".skincache/heads";
@@ -38,97 +30,57 @@ public class IconSyncManager {
             .build();
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
-    /** Nicknames of players whose heads have been cached on this server */
-    // тeперь используем ключи в форме: lowercased-name или uuid
     private static final Set<String> knownPlayers = Collections.newSetFromMap(new ConcurrentHashMap<>());
-
-    /** Tracks known icon files: relative path → MD5 hash. Used to detect new/changed files. */
     private static final Map<String, String> knownIconHashes = new ConcurrentHashMap<>();
-
-    /** Reference to the server instance for broadcasting */
     private static volatile MinecraftServer serverInstance;
-
-    /** Periodic scanner for icon folder changes */
     private static ScheduledExecutorService iconWatcherExecutor;
 
-    /** Dedicated executor for IO and network background tasks to avoid common-pool starvation */
     private static final java.util.concurrent.ExecutorService IO_EXECUTOR = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "PTDialogue-IO");
         t.setDaemon(true);
         return t;
     });
 
-    /** Interval in seconds between folder scans */
     private static final int SCAN_INTERVAL_SECONDS = 5;
-
-    /** Limit number of icons/heads to send at join to avoid blocking server tick */
     private static final int MAX_ICONS_PER_JOIN = 50;
-
-    // Automatic sending of all icons/heads on player join.
     private static volatile boolean AUTO_SEND_ON_JOIN = true;
-
-    // Global switch: disable server-side icon/head sync and background workers.
     private static volatile boolean DISABLE_SERVER_SYNC = false;
 
-    public static void register() {
-        // Always check that connecting clients have the mod installed
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ServerPlayerEntity player = handler.getPlayer();
+    public static void onPlayerJoin(ServerPlayer player, MinecraftServer server) {
+        if (DISABLE_SERVER_SYNC) return;
 
-            server.execute(() -> {
-                if (player.isDisconnected()) return;
-                try {
-                    boolean hasMod = ServerPlayNetworking.canSend(player, IconSyncPayload.ID);
-                    if (!hasMod) {
-                        player.networkHandler.disconnect(net.minecraft.text.Text.literal("You must install the PTDialogue mod to join this server."));
-                        return;
-                    }
-                } catch (Throwable t) {
-                }
+        serverInstance = server;
+        startIconWatcher();
 
-                if (!DISABLE_SERVER_SYNC) {
-                    // Store server reference for periodic broadcasting
-                    serverInstance = server;
+        String profileName = null;
+        try { profileName = player.getGameProfile().getName(); } catch (Throwable ignored) {}
+        String uuidKey;
+        try { uuidKey = player.getUUID().toString().toLowerCase(); } catch (Throwable ignored) { uuidKey = ""; }
+        String nameKey = profileName == null ? "" : profileName.toLowerCase();
 
-                    // Start periodic icon folder scanner if not already running
-                    startIconWatcher();
+        if (!uuidKey.isEmpty() && knownPlayers.add(uuidKey)) {
+            fetchAndCacheHeadByUuid(uuidKey, server);
+        }
+        if (!nameKey.isEmpty() && knownPlayers.add(nameKey)) {
+            fetchAndCacheHead(nameKey, server);
+        }
 
-                    // Also fetch and cache this player's head if not already done
-                    String profileName = null;
-                    try { profileName = player.getGameProfile().getName(); } catch (Throwable ignored) {}
-                    String uuidKey;
-                    try { uuidKey = player.getUuid().toString().toLowerCase(); } catch (Throwable ignored) { uuidKey = ""; }
-                    String nameKey = profileName == null ? "" : profileName.toLowerCase();
-
-                    if (!uuidKey.isEmpty() && knownPlayers.add(uuidKey)) {
-                        fetchAndCacheHeadByUuid(uuidKey, server);
-                    }
-                    if (!nameKey.isEmpty() && knownPlayers.add(nameKey)) {
-                        fetchAndCacheHead(nameKey, server);
-                    }
-
-                    if (AUTO_SEND_ON_JOIN) {
-                        CompletableFuture.runAsync(() -> {
-                            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
-                            sendAllIconsAsync(player);
-                            sendAllCachedHeadsAsync(player);
-                        }, IO_EXECUTOR);
-                    }
-                }
-            });
-        });
-
-        if (!DISABLE_SERVER_SYNC) {
-            ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-                stopIconWatcher();
-                serverInstance = null;
-                try { IO_EXECUTOR.shutdownNow(); } catch (Throwable ignored) {}
-            });
+        if (AUTO_SEND_ON_JOIN) {
+            CompletableFuture.runAsync(() -> {
+                try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+                sendAllIconsAsync(player);
+                sendAllCachedHeadsAsync(player);
+            }, IO_EXECUTOR);
         }
     }
 
-    // Asynchronous variant: read all icon files in a background thread and send payloads on the server thread
-    private static void sendAllIconsAsync(ServerPlayerEntity player) {
+    public static void onServerStopping() {
+        stopIconWatcher();
+        serverInstance = null;
+        try { IO_EXECUTOR.shutdownNow(); } catch (Throwable ignored) {}
+    }
+
+    private static void sendAllIconsAsync(ServerPlayer player) {
         CompletableFuture.runAsync(() -> {
             Path iconsDir = getIconsDir();
             if (!Files.isDirectory(iconsDir)) return;
@@ -144,18 +96,14 @@ public class IconSyncManager {
             }
             MinecraftServer srv = serverInstance;
             if (srv == null) return;
-            // Batch-send: schedule a single runnable on server thread that sends all payloads to the player
             final List<IconSyncPayload> finalSend = sendSlice;
             srv.execute(() -> {
                 try {
-                    if (player.isDisconnected()) return;
+                    if (player.hasDisconnected()) return;
                     for (IconSyncPayload payload : finalSend) {
-                        try {
-                            ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf());
-                        } catch (Throwable ignored) {}
+                        try { ModNetworking.sendToPlayer(payload, player); } catch (Throwable ignored) {}
                     }
-                } catch (Throwable t) {
-                }
+                } catch (Throwable ignored) {}
             });
         }, IO_EXECUTOR);
     }
@@ -178,8 +126,7 @@ public class IconSyncManager {
         }
     }
 
-    // Asynchronous variant for cached heads
-    private static void sendAllCachedHeadsAsync(ServerPlayerEntity player) {
+    private static void sendAllCachedHeadsAsync(ServerPlayer player) {
         CompletableFuture.runAsync(() -> {
              Path headsDir = getHeadsDir();
              if (!Files.isDirectory(headsDir)) return;
@@ -201,36 +148,26 @@ public class IconSyncManager {
              final List<IconSyncPayload> finalSend = sendSlice;
              srv.execute(() -> {
                 try {
-                    if (player.isDisconnected()) return;
+                    if (player.hasDisconnected()) return;
                     for (IconSyncPayload payload : finalSend) {
-                        try { ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf()); } catch (Throwable ignored) {}
+                        try { ModNetworking.sendToPlayer(payload, player); } catch (Throwable ignored) {}
                     }
-                } catch (Throwable t) {
-                }
+                } catch (Throwable ignored) {}
             });
         }, IO_EXECUTOR);
     }
 
-    // ─────────────────── Icon folder scanning ───────────────────
-
     private static synchronized void startIconWatcher() {
         if (iconWatcherExecutor != null && !iconWatcherExecutor.isShutdown()) return;
-
-        CompletableFuture.runAsync(() -> buildIconSnapshot(), IO_EXECUTOR);
-
+        CompletableFuture.runAsync(IconSyncManager::buildIconSnapshot, IO_EXECUTOR);
         iconWatcherExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "PTDialogue-IconWatcher");
             t.setDaemon(true);
             return t;
         });
-
         iconWatcherExecutor.scheduleWithFixedDelay(() -> {
-            try {
-                scanForChangedIcons();
-            } catch (Exception e) {
-            }
+            try { scanForChangedIcons(); } catch (Exception ignored) {}
         }, SCAN_INTERVAL_SECONDS, SCAN_INTERVAL_SECONDS, TimeUnit.SECONDS);
-
     }
 
     private static synchronized void stopIconWatcher() {
@@ -241,18 +178,11 @@ public class IconSyncManager {
         }
     }
 
-    /**
-     * Build initial snapshot of all icon files and their hashes.
-     */
     private static void buildIconSnapshot() {
         knownIconHashes.clear();
         Path iconsDir = getIconsDir();
         if (!Files.isDirectory(iconsDir)) return;
-
-        try {
-            collectIconHashes(iconsDir, "", knownIconHashes);
-        } catch (Exception e) {
-        }
+        try { collectIconHashes(iconsDir, "", knownIconHashes); } catch (Exception ignored) {}
     }
 
     private static void collectIconHashes(Path currentDir, String prefix, Map<String, String> target) throws Exception {
@@ -260,7 +190,6 @@ public class IconSyncManager {
             for (Path entry : stream) {
                 String fileName = entry.getFileName().toString();
                 if (fileName.equals(".skincache")) continue;
-
                 if (Files.isDirectory(entry)) {
                     String subPrefix = prefix.isEmpty() ? fileName : prefix + "/" + fileName;
                     collectIconHashes(entry, subPrefix, target);
@@ -273,27 +202,17 @@ public class IconSyncManager {
         }
     }
 
-    /**
-     * Scan the icons folder for new or changed files and broadcast them to all players.
-     */
     private static void scanForChangedIcons() {
         MinecraftServer server = serverInstance;
         if (server == null) return;
-
-        // Don't scan if no players are online
-        if (server.getPlayerManager().getPlayerList().isEmpty()) return;
+        if (server.getPlayerList().getPlayers().isEmpty()) return;
 
         Path iconsDir = getIconsDir();
         if (!Files.isDirectory(iconsDir)) return;
 
         Map<String, String> currentHashes = new ConcurrentHashMap<>();
-        try {
-            collectIconHashes(iconsDir, "", currentHashes);
-        } catch (Exception e) {
-            return;
-        }
+        try { collectIconHashes(iconsDir, "", currentHashes); } catch (Exception e) { return; }
 
-        // Find new or changed files
         List<String> changedPaths = new ArrayList<>();
         for (Map.Entry<String, String> entry : currentHashes.entrySet()) {
             String oldHash = knownIconHashes.get(entry.getKey());
@@ -302,14 +221,11 @@ public class IconSyncManager {
             }
         }
 
-
-        // Update snapshot
         knownIconHashes.clear();
         knownIconHashes.putAll(currentHashes);
 
         if (changedPaths.isEmpty()) return;
 
-        // Read changed files in this watcher thread (IO off server), then schedule sends on server thread
         List<IconSyncPayload> payloads = new ArrayList<>();
         for (String relativePath : changedPaths) {
             Path file = iconsDir.resolve(relativePath.replace('/', java.io.File.separatorChar));
@@ -317,89 +233,36 @@ public class IconSyncManager {
                 byte[] data = Files.readAllBytes(file);
                 String md5 = computeMd5(data);
                 payloads.add(new IconSyncPayload(relativePath, data, md5));
-            } catch (Exception e) {
-            }
+            } catch (Exception ignored) {}
         }
 
         if (payloads.isEmpty()) return;
 
         server.execute(() -> {
-            List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
+            List<ServerPlayer> players = server.getPlayerList().getPlayers();
             if (players.isEmpty()) return;
             for (IconSyncPayload payload : payloads) {
-                for (ServerPlayerEntity player : players) {
+                for (ServerPlayer player : players) {
                     try {
-                        if (player.isDisconnected()) continue;
-                        ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf());
+                        if (player.hasDisconnected()) continue;
+                        ModNetworking.sendToPlayer(payload, player);
                     } catch (Throwable ignored) {}
                 }
             }
         });
     }
 
-    // ─────────────────── Icon syncing ───────────────────
-
-    private static void sendAllIcons(ServerPlayerEntity player) {
-        Path iconsDir = getIconsDir();
-        if (!Files.isDirectory(iconsDir)) return;
-
-        try {
-            sendDirectoryRecursive(player, iconsDir, "");
-        } catch (Exception e) {
-        }
-    }
-
-    private static void sendDirectoryRecursive(ServerPlayerEntity player, Path currentDir, String prefix) throws Exception {
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(currentDir)) {
-            for (Path entry : stream) {
-                String fileName = entry.getFileName().toString();
-                // Skip .skincache folder (heads are sent separately)
-                if (fileName.equals(".skincache")) continue;
-
-                if (Files.isDirectory(entry)) {
-                    String subPrefix = prefix.isEmpty() ? fileName : prefix + "/" + fileName;
-                    sendDirectoryRecursive(player, entry, subPrefix);
-                } else if (fileName.toLowerCase().endsWith(".png")) {
-                    String relativePath = prefix.isEmpty() ? fileName : prefix + "/" + fileName;
-                    byte[] data = Files.readAllBytes(entry);
-                    String md5 = computeMd5(data);
-                    ServerPlayNetworking.send(player, IconSyncPayload.ID, new IconSyncPayload(relativePath, data, md5).toBuf());
-                }
-            }
-        }
-    }
-
-    private static void sendAllCachedHeads(ServerPlayerEntity player) {
-        Path headsDir = getHeadsDir();
-        if (!Files.isDirectory(headsDir)) return;
-
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(headsDir, "*.png")) {
-            for (Path headFile : stream) {
-                String nick = headFile.getFileName().toString().replace(".png", "");
-                byte[] data = Files.readAllBytes(headFile);
-                String md5 = computeMd5(data);
-                ServerPlayNetworking.send(player,
-                        IconSyncPayload.ID, new IconSyncPayload(".heads/" + nick + ".png", data, md5).toBuf());
-            }
-        } catch (Exception e) {
-        }
-    }
-
-    // ─────────────────── Head fetching ───────────────────
-
     private static void fetchAndCacheHead(String playerName, MinecraftServer server) {
         String key = playerName.toLowerCase();
         Path skinFile = getHeadsDir().resolve(key + ".png");
 
-        // If already cached on disk, just broadcast
         if (Files.exists(skinFile)) {
             broadcastHead(key, server);
             return;
         }
 
-        // If player is currently online on this server, try extracting skin URL from their GameProfile properties
         try {
-            ServerPlayerEntity online = server.getPlayerManager().getPlayer(playerName);
+            ServerPlayer online = server.getPlayerList().getPlayerByName(playerName);
             if (online != null) {
                 if (trySaveSkinFromPlayerProfile(online, skinFile)) {
                     server.execute(() -> broadcastHead(key, server));
@@ -408,10 +271,8 @@ public class IconSyncManager {
             }
         } catch (Throwable ignored) {}
 
-        // Fetch from Mojang API async
         CompletableFuture.runAsync(() -> {
             try {
-                // Step 1: Get UUID
                 HttpResponse<String> uuidResp = HTTP.send(
                         HttpRequest.newBuilder()
                                 .uri(URI.create("https://api.mojang.com/users/profiles/minecraft/" + playerName))
@@ -422,7 +283,6 @@ public class IconSyncManager {
                 String uuid = JsonParser.parseString(uuidResp.body())
                         .getAsJsonObject().get("id").getAsString();
 
-                // Step 2: Get profile → skin URL
                 HttpResponse<String> profileResp = HTTP.send(
                         HttpRequest.newBuilder()
                                 .uri(URI.create("https://sessionserver.mojang.com/session/minecraft/profile/" + uuid))
@@ -433,7 +293,6 @@ public class IconSyncManager {
                 String skinUrl = extractSkinUrl(profileResp.body());
                 if (skinUrl == null) return;
 
-                // Step 3: Download raw skin PNG
                 HttpResponse<byte[]> skinResp = HTTP.send(
                         HttpRequest.newBuilder()
                                 .uri(URI.create(skinUrl))
@@ -442,17 +301,11 @@ public class IconSyncManager {
                 if (skinResp.statusCode() != 200) return;
 
                 byte[] skinPng = skinResp.body();
-
-                // Step 4: Save raw skin to disk (client will composite)
                 Files.createDirectories(skinFile.getParent());
                 Files.write(skinFile, skinPng);
 
-
-                // Step 5: Broadcast to all online players
                 server.execute(() -> broadcastHead(key, server));
-
-            } catch (Exception e) {
-            }
+            } catch (Exception ignored) {}
         }, IO_EXECUTOR);
     }
 
@@ -465,21 +318,17 @@ public class IconSyncManager {
                 byte[] data = Files.readAllBytes(headFile);
                 String md5 = computeMd5(data);
                 IconSyncPayload payload = new IconSyncPayload(".heads/" + key + ".png", data, md5);
-                // schedule send
                 server.execute(() -> {
                     try {
-                        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                            try { ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf()); } catch (Throwable ignored) {}
+                        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                            try { ModNetworking.sendToPlayer(payload, player); } catch (Throwable ignored) {}
                         }
-                    } catch (Throwable t) {
-                    }
+                    } catch (Throwable ignored) {}
                 });
-            } catch (Exception e) {
-            }
+            } catch (Exception ignored) {}
         }, IO_EXECUTOR);
     }
 
-    // Check whether a cached head exists for the given key (lowercased name or uuid)
     public static boolean hasHead(String key) {
         try {
             Path headFile = getHeadsDir().resolve(key.toLowerCase() + ".png");
@@ -489,8 +338,7 @@ public class IconSyncManager {
         }
     }
 
-    // Send a single cached head to a specific player (if present)
-    public static void sendHeadToPlayer(String key, ServerPlayerEntity player) {
+    public static void sendHeadToPlayer(String key, ServerPlayer player) {
         Path headFile = getHeadsDir().resolve(key.toLowerCase() + ".png");
         if (!Files.exists(headFile) || !Files.isRegularFile(headFile)) return;
         CompletableFuture.runAsync(() -> {
@@ -498,28 +346,23 @@ public class IconSyncManager {
                 byte[] data = Files.readAllBytes(headFile);
                 String md5 = computeMd5(data);
                 IconSyncPayload payload = new IconSyncPayload(".heads/" + key.toLowerCase() + ".png", data, md5);
-                // schedule send on server thread
                 try {
                     var srv = serverInstance;
                     if (srv == null) return;
                     srv.execute(() -> {
-                        try { ServerPlayNetworking.send(player, IconSyncPayload.ID, payload.toBuf()); } catch (Throwable ignored) {}
+                        try { ModNetworking.sendToPlayer(payload, player); } catch (Throwable ignored) {}
                     });
                 } catch (Throwable ignored) {}
-            } catch (Exception e) {
-            }
+            } catch (Exception ignored) {}
         }, IO_EXECUTOR);
     }
 
-    // Public helper: ensure a player's head is cached (async fetch) — safe to call repeatedly.
     public static void ensureHeadCached(String playerName, MinecraftServer server) {
         if (playerName == null || playerName.isEmpty() || server == null) return;
         String key = playerName.toLowerCase();
         if (hasHead(key)) return;
         fetchAndCacheHead(playerName, server);
     }
-
-    // ─────────────────── Head compositing ───────────────────
 
     private static String extractSkinUrl(String profileJson) {
         try {
@@ -535,26 +378,18 @@ public class IconSyncManager {
                     return textures.getAsJsonObject("SKIN").get("url").getAsString();
                 }
             }
-        } catch (Exception e) {
-        }
+        } catch (Exception ignored) {}
         return null;
     }
 
-    // ─────────────────── Paths ───────────────────
-
     private static Path getIconsDir() {
-        var loader = net.fabricmc.loader.api.FabricLoader.getInstance();
-        Path configDir = loader.getConfigDir();
-
-        // config/ptlore/ptdialogue/
+        Path configDir = FMLPaths.CONFIGDIR.get();
         return configDir.resolve("ptlore").resolve("ptdialogue");
     }
 
     private static Path getHeadsDir() {
         return getIconsDir().resolve(HEADS_SUBFOLDER);
     }
-
-    // ─────────────────── Utils ───────────────────
 
     static String computeMd5(byte[] data) {
         try {
@@ -567,36 +402,6 @@ public class IconSyncManager {
         }
     }
 
-    // Public helper: get the preferred head key for a player (uuid preferred, fallback to name)
-    public static String getHeadKeyForPlayer(ServerPlayerEntity player) {
-        if (player == null) return "";
-        try {
-            String uuidKey = player.getUuid().toString().toLowerCase();
-            if (!uuidKey.isBlank()) return uuidKey;
-        } catch (Throwable ignored) {}
-        try {
-            String name = player.getGameProfile().getName();
-            if (name != null && !name.isBlank()) return name.toLowerCase();
-        } catch (Throwable ignored) {}
-        return "";
-    }
-
-    // Public helper: ensure a specific player's head is cached by uuid (if possible)
-    public static void ensureHeadCachedForPlayer(ServerPlayerEntity player, MinecraftServer server) {
-        if (player == null || server == null) return;
-        String key = getHeadKeyForPlayer(player);
-        if (key.isEmpty()) return;
-        if (hasHead(key)) return;
-
-        // If we got a uuid-like key (no dashes), try fetch by uuid first
-        if (key.matches("[0-9a-f]{32}")) {
-            fetchAndCacheHeadByUuid(key, server);
-        } else {
-            fetchAndCacheHead(key, server);
-        }
-    }
-
-    // Fetch head directly by uuid (expects compact 32 hex chars)
     private static void fetchAndCacheHeadByUuid(String uuid32, MinecraftServer server) {
         String key = uuid32.toLowerCase();
         Path skinFile = getHeadsDir().resolve(key + ".png");
@@ -608,7 +413,6 @@ public class IconSyncManager {
 
         CompletableFuture.runAsync(() -> {
             try {
-                // Query sessionserver profile by uuid (with dashes inserted)
                 String dashed = uuid32;
                 if (uuid32.length() == 32) {
                     dashed = uuid32.replaceFirst("(.{8})(.{4})(.{4})(.{4})(.{12})", "$1-$2-$3-$4-$5");
@@ -636,19 +440,16 @@ public class IconSyncManager {
                 Files.write(skinFile, skinPng);
 
                 server.execute(() -> broadcastHead(key, server));
-            } catch (Exception e) {
-            }
+            } catch (Exception ignored) {}
         }, IO_EXECUTOR);
     }
 
-    // Attempt to save a skin by downloading the texture URL from the player's profile properties (for online players)
-    private static boolean trySaveSkinFromPlayerProfile(ServerPlayerEntity player, Path outputFile) {
+    private static boolean trySaveSkinFromPlayerProfile(ServerPlayer player, Path outputFile) {
         try {
             Object gp = player.getGameProfile();
             if (gp == null) return false;
 
             Object propertiesObj = null;
-            // Try several possible accessor names reflectively
             String[] tryNames = new String[] {"getProperties", "properties", "getPropertyMap", "getPropertySet"};
             for (String mname : tryNames) {
                 try {
@@ -659,7 +460,6 @@ public class IconSyncManager {
             }
 
             if (propertiesObj == null) {
-                // Try field access
                 try {
                     var f = gp.getClass().getField("properties");
                     propertiesObj = f.get(gp);
@@ -668,7 +468,6 @@ public class IconSyncManager {
 
             if (propertiesObj == null) return false;
 
-            // Normalize to an iterable of property objects
             java.util.Collection<?> propsCollection = null;
             if (propertiesObj instanceof java.util.Map) {
                 propsCollection = ((java.util.Map<?,?>)propertiesObj).values();
@@ -715,7 +514,6 @@ public class IconSyncManager {
                 if (name == null || value == null) continue;
                 if (!"textures".equals(name)) continue;
 
-                // decode and extract skin URL as before
                 try {
                     String decoded = new String(java.util.Base64.getDecoder().decode(value));
                     JsonObject textures = JsonParser.parseString(decoded).getAsJsonObject().getAsJsonObject("textures");
@@ -731,12 +529,9 @@ public class IconSyncManager {
                             return true;
                         }
                     }
-                } catch (Exception e) {
-                }
+                } catch (Exception ignored) {}
             }
-        } catch (Exception e) {
-        }
+        } catch (Exception ignored) {}
         return false;
     }
-
 }

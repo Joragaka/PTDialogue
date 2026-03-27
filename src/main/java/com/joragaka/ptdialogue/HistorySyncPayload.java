@@ -1,55 +1,64 @@
 package com.joragaka.ptdialogue;
 
-import io.netty.buffer.Unpooled;
-import net.minecraft.network.PacketByteBuf;
-import net.minecraft.util.Identifier;
+import com.joragaka.ptdialogue.client.DialoguePacketHandler;
+import net.minecraft.network.FriendlyByteBuf;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.network.NetworkEvent;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
-/**
- * S2C packet: server sends the full dialogue history for a player.
- */
-public record HistorySyncPayload(List<Entry> entries, boolean fullSync) {
+public class HistorySyncPayload {
 
-    public static final Identifier ID = new Identifier("ptdialogue", "history_sync");
+    private final List<Entry> entries;
+    private final boolean fullSync;
 
-    // Add optional skinUuid to history entries so clients can use exact skin reference
     public record Entry(String icon, String name, int color, String message, long timestamp, String skinUuid) {}
 
-    public void write(PacketByteBuf buf) {
+    public HistorySyncPayload(List<Entry> entries, boolean fullSync) {
+        this.entries = entries;
+        this.fullSync = fullSync;
+    }
+
+    public List<Entry> entries() { return entries; }
+    public boolean fullSync() { return fullSync; }
+
+    public void write(FriendlyByteBuf buf) {
         buf.writeBoolean(fullSync);
         buf.writeInt(entries.size());
         for (Entry e : entries) {
-            buf.writeString(e.icon());
-            buf.writeString(e.name());
+            buf.writeUtf(e.icon());
+            buf.writeUtf(e.name());
             buf.writeInt(e.color());
-            buf.writeString(e.message());
+            buf.writeUtf(e.message());
             buf.writeLong(e.timestamp());
-            buf.writeString(e.skinUuid() == null ? "" : e.skinUuid());
+            buf.writeUtf(e.skinUuid() == null ? "" : e.skinUuid());
         }
     }
 
-    public static HistorySyncPayload read(PacketByteBuf buf) {
+    public static HistorySyncPayload read(FriendlyByteBuf buf) {
         boolean full = buf.readBoolean();
         int count = buf.readInt();
         List<Entry> list = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            String icon  = buf.readString();
-            String name  = buf.readString();
-            int    color = buf.readInt();
-            String msg   = buf.readString();
-            long   ts    = buf.readLong();
-            String skinUuid = buf.readString();
+            String icon = buf.readUtf();
+            String name = buf.readUtf();
+            int color = buf.readInt();
+            String msg = buf.readUtf();
+            long ts = buf.readLong();
+            String skinUuid = buf.readUtf();
             if (skinUuid.isEmpty()) skinUuid = null;
             list.add(new Entry(icon, name, color, msg, ts, skinUuid));
         }
         return new HistorySyncPayload(list, full);
     }
 
-    public PacketByteBuf toBuf() {
-        PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
-        write(buf);
-        return buf;
+    public static void handle(HistorySyncPayload msg, Supplier<NetworkEvent.Context> ctx) {
+        ctx.get().enqueueWork(() -> {
+            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> DialoguePacketHandler.handleHistorySync(msg));
+        });
+        ctx.get().setPacketHandled(true);
     }
 }
